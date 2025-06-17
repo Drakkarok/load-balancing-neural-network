@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  agent:
+    build: ./Agent
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/app/models  # Shared model storage
+    networks:
+      - lbnn-network
+    container_name: lbnn-agent
+
+  web-server-1:
+    build: ./Containers/web-server-1
+    ports:
+      - "8081:8081"
+    environment:
+      - SERVER_ID=server-1
+    networks:
+      - lbnn-network
+    container_name: lbnn-server-1
+
+  web-server-2:
+    build: ./Containers/web-server-2
+    ports:
+      - "8082:8082"
+    environment:
+      - SERVER_ID=server-2
+    networks:
+      - lbnn-network
+    container_name: lbnn-server-2
+
+  web-server-3:
+    build: ./Containers/web-server-3
+    ports:
+      - "8083:8083"
+    environment:
+      - SERVER_ID=server-3
+    networks:
+      - lbnn-network
+    container_name: lbnn-server-3
+
+  trainer:
+    build: ./Trainer
+    ports:
+      - "8084:8084"
+    volumes:
+      - ./models:/app/models  
+    networks:
+      - lbnn-network
+    container_name: lbnn-trainer
+
+  k6:
+    build: ./K6
+    depends_on:
+      - agent
+      - web-server-1
+      - web-server-2 
+      - web-server-3
+    networks:
+      - lbnn-network
+    container_name: lbnn-k6
+    profiles: ["load-test"]
+
+networks:
+  lbnn-network:
+    driver: bridge

@@ -1,0 +1,15 @@
+{
+  "total_decisions": 20,
+  "average_reward": 7.2787500000000005,
+  "reward_std": 20.764483913343476,
+  "optimal_decisions": 10,
+  "suboptimal_decisions": 9,
+  "neutral_decisions": 1,
+  "server_distribution": {
+    "server-1": 7,
+    "server-2": 7,
+    "server-3": 6
+  },
+  "timestamp": 1750146682,
+  "episode_file": "/app/models/episode_1750146682_rewards.json"
+}

@@ -1,0 +1,7 @@
+flask==2.3.3
+requests==2.31.0
+torch==2.1.0
+stable-baselines3==2.1.0
+gymnasium==0.29.1
+numpy==1.24.3
+pandas==2.0.3
