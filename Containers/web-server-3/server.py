@@ -99,12 +99,12 @@ def process_request():
     request_data = data.get('request')
     is_real = data.get('is_real', True)
     
-    state_before_processing = get_current_metrics()
-    
     with state_lock:
         # Update to current tick (removes expired requests)
         update_to_tick(tick_id)
         
+        state_before_processing = get_current_metrics()
+
         if is_real and request_data:
             # Add new real request to active requests
             add_real_request(request_data, tick_id)
