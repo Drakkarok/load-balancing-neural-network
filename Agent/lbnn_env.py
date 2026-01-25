@@ -45,6 +45,10 @@ class LBNNEnv(gym.Env):
         self.MAX_DURATION = 6.0
         self.MAX_CONNECTIONS = 10.0 # Estimated max
 
+        # Use a session for persistent connections to Agent
+        self.session = requests.Session()
+        self.session.headers.update({"Content-Type": "application/json"})
+
     def reset(self, seed=None, options=None):
         """
         Reset the environment for a new episode.
@@ -59,7 +63,7 @@ class LBNNEnv(gym.Env):
         
         # Reset Agent
         try:
-            requests.post(f"{AGENT_URL}/reset_episode")
+            self.session.post(f"{AGENT_URL}/reset_episode")
             # Also need to reset servers (Agent handles this internally via /reset_episode usually, 
             # or we might need to trigger it. Let's assume Agent.reset_episode does it.
             # *Correction*: Agent.reset_episode in app.py only resets counters. 
@@ -109,7 +113,7 @@ class LBNNEnv(gym.Env):
         
         try:
             # Send to Agent to execute
-            response = requests.post(f"{AGENT_URL}/step_training", json=payload, timeout=30)
+            response = self.session.post(f"{AGENT_URL}/step_training", json=payload, timeout=30)
             data = response.json()
             
             # Extract reward (calculated by Trainer/Agent)
@@ -169,7 +173,7 @@ class LBNNEnv(gym.Env):
     def _get_server_states(self):
         """Fetch current states from Agent"""
         try:
-            resp = requests.get(f"{AGENT_URL}/server_states")
+            resp = self.session.get(f"{AGENT_URL}/server_states")
             return resp.json()
         except:
             return {}
