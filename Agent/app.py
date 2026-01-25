@@ -1,6 +1,7 @@
 import requests
 import threading
 from flask import Flask, request, jsonify
+from requests.adapters import HTTPAdapter
 
 app = Flask(__name__)
 
@@ -24,6 +25,12 @@ class LoadBalancerAgent:
         self.trainer_url = "http://lbnn-trainer:8084"
         
         # Initialize by getting current server states
+        
+        # Optimize connections to servers
+        self.session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20)
+        self.session.mount("http://", adapter)
+        
         self.initialize_server_states()
     
     def initialize_server_states(self):
@@ -31,7 +38,7 @@ class LoadBalancerAgent:
         print("Initializing server states...")
         for server in self.servers:
             try:
-                response = requests.get(f"{server['url']}/metrics", timeout=5)
+                response = self.session.get(f"{server['url']}/metrics", timeout=10)
                 if response.status_code == 200:
                     self.server_states[server['id']] = response.json()
                     print(f"Initialized {server['id']}: {response.json()}")
@@ -81,10 +88,10 @@ class LoadBalancerAgent:
             
             try:
                 s_start = time.time()
-                response = requests.post(
+                response = self.session.post(
                     f"{server['url']}/process_request",
                     json=payload,
-                    timeout=10
+                    timeout=30
                 )
                 duration = time.time() - s_start
                 if duration > 1.0:
@@ -157,7 +164,7 @@ class LoadBalancerAgent:
             self.current_tick = 0 
             for server in self.servers:
                 try:
-                    requests.get(f"{server['url']}/reset_episode", timeout=5)
+                    self.session.get(f"{server['url']}/reset_episode", timeout=10)
                 except Exception as e:
                     print(f"Failed to reset {server['id']}: {e}")
             self.initialize_server_states()
