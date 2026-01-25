@@ -66,7 +66,11 @@ class LoadBalancerAgent:
         
         responses = {}
         
+        import time
+        start_time = time.time()
+        
         for i, server in enumerate(self.servers):
+            # ... (loop content same)
             is_chosen = (i == chosen_server_index)
             
             payload = {
@@ -76,11 +80,15 @@ class LoadBalancerAgent:
             }
             
             try:
+                s_start = time.time()
                 response = requests.post(
                     f"{server['url']}/process_request",
                     json=payload,
                     timeout=10
                 )
+                duration = time.time() - s_start
+                if duration > 1.0:
+                    print(f"WARNING: {server['id']} took {duration:.2f}s to respond!")
                 
                 if response.status_code == 200:
                     responses[server['id']] = response.json()
@@ -90,6 +98,10 @@ class LoadBalancerAgent:
                     
             except Exception as e:
                 print(f"Failed to contact {server['id']}: {e}")
+                
+        total_duration = time.time() - start_time
+        if total_duration > 2.0:
+            print(f"SLOW TICK: Total sync took {total_duration:.2f}s")
         
         return responses, tick_id
     

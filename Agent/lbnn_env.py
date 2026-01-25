@@ -159,8 +159,7 @@ class LBNNEnv(gym.Env):
             
         except Exception as e:
             print(f"Error in step: {e}")
-            done = True # End episode on error
-            observation = np.zeros(12, dtype=np.float32)
+            raise e # Propagate error so training loop can handle it (retry/log)
             
         return observation, reward, done, truncated, info
 
