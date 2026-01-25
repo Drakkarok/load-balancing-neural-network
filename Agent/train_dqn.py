@@ -61,6 +61,9 @@ def train():
                 truncated = False
                 
                 while not (done or truncated):
+                    # Throttling to prevent CPU exhaustion on Windows Docker
+                    time.sleep(0.05) 
+
                     # Select Action
                     action = agent.select_action(state)
                     
