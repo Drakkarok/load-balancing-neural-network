@@ -109,7 +109,7 @@ class LBNNEnv(gym.Env):
         
         try:
             # Send to Agent to execute
-            response = requests.post(f"{AGENT_URL}/step_training", json=payload, timeout=10)
+            response = requests.post(f"{AGENT_URL}/step_training", json=payload, timeout=30)
             data = response.json()
             
             # Extract reward (calculated by Trainer/Agent)
