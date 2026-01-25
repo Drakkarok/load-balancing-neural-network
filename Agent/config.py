@@ -31,7 +31,7 @@ PHASE_3_LENGTH = 500
 
 # Checkpointing
 CHECKPOINT_FREQ = 100
-CHECKPOINT_DIR = "../Models/checkpoints"
+CHECKPOINT_DIR = "Models/checkpoints"
 
 # System Constants
 AGENT_URL = "http://localhost:8080"

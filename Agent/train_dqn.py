@@ -21,7 +21,7 @@ def train():
     
     total_episodes = 0
     metrics_buffer = []
-    csv_path = "../Models/metrics/training_metrics.csv"
+    csv_path = "Models/metrics/training_metrics.csv"
     
     for phase_name, num_episodes, episode_len in phases:
         print(f"\n=== Starting {phase_name} ({num_episodes} episodes, length {episode_len}) ===")
