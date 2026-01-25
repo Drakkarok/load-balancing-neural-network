@@ -67,25 +67,24 @@ class LoadBalancerAgent:
         return chosen_server_index, chosen_server
     
     def send_synchronized_requests(self, request_data, chosen_server_index):
-        """Send requests to all servers - real to chosen, empty to others"""
+        """Send requests to all servers in PARALLEL to reduce latency"""
         self.current_tick += 1
         tick_id = self.current_tick
         
         responses = {}
-        
         import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
         start_time = time.time()
         
-        for i, server in enumerate(self.servers):
-            # ... (loop content same)
+        # Helper function for parallel execution
+        def send_to_server(i, server):
             is_chosen = (i == chosen_server_index)
-            
             payload = {
                 "tick_id": tick_id,
                 "request": request_data if is_chosen else None,
                 "is_real": is_chosen
             }
-            
             try:
                 s_start = time.time()
                 response = self.session.post(
@@ -96,16 +95,29 @@ class LoadBalancerAgent:
                 duration = time.time() - s_start
                 if duration > 1.0:
                     print(f"WARNING: {server['id']} took {duration:.2f}s to respond!")
-                
+                    
                 if response.status_code == 200:
-                    responses[server['id']] = response.json()
-                    print(f"Tick {tick_id}: {server['id']} responded: {response.json()}")
+                    return server['id'], response.json()
                 else:
                     print(f"Error from {server['id']}: {response.status_code}")
-                    
+                    return server['id'], None
             except Exception as e:
                 print(f"Failed to contact {server['id']}: {e}")
-                
+                return server['id'], None
+
+        # Execute requests in parallel
+        with ThreadPoolExecutor(max_workers=len(self.servers)) as executor:
+            future_to_server = {
+                executor.submit(send_to_server, i, server): server 
+                for i, server in enumerate(self.servers)
+            }
+            
+            for future in as_completed(future_to_server):
+                sid, result = future.result()
+                if result:
+                    responses[sid] = result
+                    # print(f"Tick {tick_id}: {sid} responded") # Too verbose logging
+
         total_duration = time.time() - start_time
         if total_duration > 2.0:
             print(f"SLOW TICK: Total sync took {total_duration:.2f}s")
