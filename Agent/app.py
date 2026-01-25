@@ -135,10 +135,21 @@ class LoadBalancerAgent:
             print(f"Error triggering trainer: {e}")
             return False
     
-    def reset_episode(self):
-        """Reset episode counter"""
+    def reset_episode(self, hard_reset=False):
+        """Reset episode counter and optionally servers"""
         print("Resetting episode...")
         self.current_episode_requests = 0
+        
+        if hard_reset:
+            print("Performing HARD RESET on servers...")
+            self.current_tick = 0 
+            for server in self.servers:
+                try:
+                    requests.get(f"{server['url']}/reset_episode", timeout=5)
+                except Exception as e:
+                    print(f"Failed to reset {server['id']}: {e}")
+            self.initialize_server_states()
+
         print(f"Ready for new episode (length: {self.episode_length})")
 
 # Global agent instance
@@ -225,6 +236,47 @@ def set_episode_length():
         "status": "updated",
         "new_episode_length": agent.episode_length
     }
+
+@app.route('/step_training', methods=['POST'])
+def step_training():
+    """
+    Endpoint for RL Training step.
+    Receives: { "request": {...}, "forced_action": int }
+    Returns: Updated state after action.
+    """
+    data = request.get_json()
+    request_data = data.get('request')
+    forced_action = data.get('forced_action')
+    
+    if request_data is None or forced_action is None:
+        return {"error": "Missing request or forced_action"}, 400
+        
+    # Execute specific action
+    chosen_server_index = int(forced_action)
+    chosen_server = agent.servers[chosen_server_index]
+    
+    # Send synchronized requests (Agent Logia)
+    responses, tick_id = agent.send_synchronized_requests(request_data, chosen_server_index)
+    
+    # Update internal state
+    agent.update_server_states(responses)
+    
+    # Track progress (optional during training, but good for consistency)
+    agent.current_episode_requests += 1
+    
+    return {
+        "status": "processed",
+        "tick_id": tick_id,
+        "chosen_server": chosen_server['id'],
+        "current_server_states": agent.get_current_server_states()
+    }
+
+@app.route('/reset_episode', methods=['GET', 'POST']) # Allow POST for explicit calls
+def manual_reset_episode():
+    """Manual trigger for episode reset (used by RL Env)"""
+    # Hard reset to ensure fresh state for new episode
+    agent.reset_episode(hard_reset=True)
+    return {"status": "episode_reset", "tick": agent.current_tick}
 
 if __name__ == '__main__':
     print("Load Balancer Agent Starting...")
