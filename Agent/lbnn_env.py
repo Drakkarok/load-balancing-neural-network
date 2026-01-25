@@ -109,7 +109,7 @@ class LBNNEnv(gym.Env):
         
         try:
             # Send to Agent to execute
-            response = requests.post(f"{AGENT_URL}/step_training", json=payload, timeout=5)
+            response = requests.post(f"{AGENT_URL}/step_training", json=payload, timeout=10)
             data = response.json()
             
             # Extract reward (calculated by Trainer/Agent)
@@ -223,6 +223,10 @@ class LBNNEnv(gym.Env):
         Load = CPU% + Memory%
         """
         loads = {}
+        # Add null check for server_states
+        if not server_states:
+            return 0.0 # Or handle as appropriate for no server states
+            
         for sid, state in server_states.items():
             loads[sid] = state.get("cpu", 0) + state.get("memory", 0)
             

@@ -76,7 +76,9 @@ class EpisodeMetrics:
         total_cpu_time = {"server-1": 0, "server-2": 0, "server-3": 0}
         
         for tick in episode_data:
-            states = tick.get("server_states", {})
+            states = tick.get("server_states")
+            if not states:
+                continue
             for sid, state in states.items():
                 total_cpu_time[sid] += state.get("cpu", 0)
         
@@ -101,7 +103,9 @@ class EpisodeMetrics:
         server_utils = {"server-1": [], "server-2": [], "server-3": []}
         
         for tick in episode_data:
-            states = tick.get("server_states", {})
+            states = tick.get("server_states")
+            if not states:
+                continue
             for sid, state in states.items():
                 util = state.get("cpu", 0) + state.get("memory", 0)
                 server_utils[sid].append(util)
