@@ -32,6 +32,9 @@ class LBNNEnv(gym.Env):
         self.episode_length = 150 # Default, will be overridden by curriculum
         self.current_step = 0
         
+        # FIX: Cache the server states BEFORE the action is taken usually
+        self.last_server_states = {} 
+        
         # Request generation configuration (matching K6)
         self.request_types = [
             {"cpu": 50, "memory": 30, "duration": 2},    # Light
@@ -54,7 +57,7 @@ class LBNNEnv(gym.Env):
         Reset the environment for a new episode.
         1. Call Agent to reset episode state.
         2. Generate the first request.
-        3. Get initial server states.
+        3. Get initial server states (PRE-ACTION state for the first step).
         4. Return initial observation.
         """
         super().reset(seed=seed)
@@ -63,110 +66,89 @@ class LBNNEnv(gym.Env):
         
         # Reset Agent
         try:
+            # This resets the episode counters on the Agent
             self.session.post(f"{AGENT_URL}/reset_episode")
-            # Also need to reset servers (Agent handles this internally via /reset_episode usually, 
-            # or we might need to trigger it. Let's assume Agent.reset_episode does it.
-            # *Correction*: Agent.reset_episode in app.py only resets counters. 
-            # We need to explicitly reset servers based on current app.py, or add that logic. 
-            # Note: app.py reset_episode logic:
-            # def reset_episode(self): ... self.current_episode_requests = 0 ...
-            # It DOES NOT reset servers.
-            # We should likely add a /hard_reset endpoint to Agent or call servers directly.
-            # Detailed Plan: I will MODIFY app.py to have a /reset_system endpoint that resets servers too.
-            pass 
         except Exception as e:
             print(f"Error resetting environment: {e}")
         
         # Generate first request
         self.current_request = self._generate_request()
         
-        # Get current state from Agent
-        server_states = self._get_server_states()
+        # FIX: Get initial server states to serve as the "Pre-Action" state for step 1
+        self.last_server_states = self._get_server_states()
         
-        # Construct observation
-        observation = self._construct_state(server_states, self.current_request)
+        # Construct observation using these initial states
+        observation = self._construct_state(self.last_server_states, self.current_request)
         
         return observation, {}
 
     def step(self, action):
         """
         Execute one step in the environment.
-        1. Send the routing decision + current request to Agent.
-        2. Agent executes the tick.
-        3. Receive new state and reward.
+        1. Calculate Reward using PRE-ACTION state (self.last_server_states).
+        2. Execute action (send to Agent).
+        3. Receive NEW state (Post-Action) and cache it for NEXT step's reward.
         4. Return (obs, reward, done, truncated, info).
         """
         self.current_step += 1
         
+        chosen_server_id = f"server-{action+1}"
+        
+        # FIX 1: Calculate Reward based on PRE-ACTION state (Timing Bug Fix)
+        # We use self.last_server_states which was captured at the end of the previous step (or reset)
+        reward = self._calculate_reward(self.last_server_states, chosen_server_id)
+        
         # Prepare payload for Agent to execute specific action
-        # Note: We need a new endpoint in app.py that accepts a FORCED action/decision
-        # OR we modify /route_request to accept an optional 'forced_server_index'
         payload = {
             "request": self.current_request,
             "forced_action": int(action) 
         }
         
-        reward = 0
         done = False
         truncated = False
         info = {}
         
         try:
-            # Send to Agent to execute
+            # Send to Agent to execute action
+            # This will apply the load and return the NEW state
             response = self.session.post(f"{AGENT_URL}/step_training", json=payload, timeout=60)
             data = response.json()
             
-            # Extract reward (calculated by Trainer/Agent)
-            # The agent will need to return the reward calculated for this specific step.
-            # Currently app.py doesn't calculate immediate rewards per tick in the response, 
-            # it waits for the Trainer at the end. 
-            # *CRITICAL CHANGE*: We need the reward IMMEDIATELY for DQN.
-            # We can calculate it here or have Agent do it. 
-            # Plan: Have Agent return 'server_states' (before and after) and we calculate reward locally 
-            # using the same formula to avoid latency/complexity of calling Trainer every tick?
-            # OR we implement the Load-Invariant Reward formula here in Python.
-            # Implementation Plan says "DQN will use final_reward directly".
-            # "Already calculated by your Trainer...".
-            # But Trainer calculates it *post-episode*. 
-            # For DQN training, we need it *per step*.
-            # I will implement the reward calculation logic HERE in step() for immediate feedback, 
-            # ensuring it matches the Trainer's logic.
+            # Get the NEW states (Post-Action)
+            current_server_states = data.get("current_server_states", {})
             
-            # data should contain: current_server_states (after tick), etc.
-            server_states = data.get("current_server_states", {})
-            
-            # Calculate Reward (Load Invariant)
-            chosen_server_id = f"server-{action+1}"
-            reward = self._calculate_reward(server_states, chosen_server_id)
+            # FIX 1 (cont): Update cached state for the NEXT step's reward calculation
+            self.last_server_states = current_server_states
             
             # Generate NEXT request (for next observation)
             if self.current_step >= self.episode_length:
                 done = True
                 self.current_request = None # No next request
-                # Observation will partial/dummy or we just return last state with zero request
-                # But standard is to return a valid state.
-                next_request = self._generate_request() # Just to keep shape
+                next_request = self._generate_request() # Dummy for shape
             else:
                 next_request = self._generate_request()
                 self.current_request = next_request
             
-            observation = self._construct_state(server_states, next_request)
+            # Construct observation for the NEXT step
+            # Note: The observation sees the POST-ACTION state (what the system looks like now)
+            # plus the NEXT request to be scheduled.
+            observation = self._construct_state(current_server_states, next_request)
             
             info = {
-                "server_states": server_states,
-                "chosen_server": chosen_server_id
+                "server_states": current_server_states,
+                "chosen_server": chosen_server_id,
+                "prev_server_states": self.last_server_states # Debug info
             }
             
         except Exception as e:
             print(f"Error in step: {e}")
-            raise e # Propagate error so training loop can handle it (retry/log)
+            raise e 
             
         return observation, reward, done, truncated, info
 
     def _generate_request(self):
         """Generate a random request based on types"""
         req = random.choice(self.request_types).copy()
-        # Add random noise if we want, but keeping it discrete for now as per K6
         return req
 
     def _get_server_states(self):
@@ -175,13 +157,17 @@ class LBNNEnv(gym.Env):
             resp = self.session.get(f"{AGENT_URL}/server_states")
             return resp.json()
         except:
-            return {}
+            # Return empty structure if failed
+            return {
+                "server-1": {"cpu": 0, "memory": 0, "connections": 0},
+                "server-2": {"cpu": 0, "memory": 0, "connections": 0},
+                "server-3": {"cpu": 0, "memory": 0, "connections": 0}
+            }
 
     def _construct_state(self, server_states, request):
         """Normalize and construct 12-dim vector"""
-        # Default empty state if fetch failed
         if not server_states:
-            return np.zeros(12, dtype=np.float32)
+            server_states = self._get_server_states() # Fallback
 
         # Normalize Server 1
         s1 = server_states.get("server-1", {"cpu":0, "memory":0, "connections":0})
@@ -219,27 +205,62 @@ class LBNNEnv(gym.Env):
 
         return np.array(s1_vec + s2_vec + s3_vec + req_vec, dtype=np.float32)
 
-    def _calculate_reward(self, server_states, chosen_id):
+    def _calculate_reward(self, server_states, chosen_server_id):
         """
-        Calculate Load-Invariant Reward.
-        Reward = (Average Load of Others) - (Load of Chosen)
-        Load = CPU% + Memory%
+        FIX 2: Implement Gradient-Based Reward Logic (Ported from Trainer/trainer.py)
+        Logic:
+        1. Identify Min Load.
+        2. Identify Optimal Group (servers with Min Load).
+        3. If Chosen in Optimal Group: Reward = Avg(Suboptimal) - Chosen.
+        4. If Chosen in Suboptimal Group: Penalty = Avg(Optimal) - Chosen.
+        5. If Tie (All Equal): Reward = 0.
         """
+        # 1. Parse states into simplified Load dict
         loads = {}
-        # Add null check for server_states
-        if not server_states:
-            return 0.0 # Or handle as appropriate for no server states
-            
-        for sid, state in server_states.items():
-            loads[sid] = state.get("cpu", 0) + state.get("memory", 0)
-            
-        chosen_load = loads.get(chosen_id, 0)
+        parsed_states = {}
         
-        other_loads = [l for s, l in loads.items() if s != chosen_id]
-        if not other_loads:
+        if not server_states:
+             return 0.0
+             
+        for sid, state in server_states.items():
+            cpu = state.get("cpu", 0)
+            mem = state.get("memory", 0)
+            total_load = cpu + mem
+            loads[sid] = total_load
+            parsed_states[sid] = {'cpu': cpu, 'memory': mem, 'total_load': total_load}
+            
+        # 2. Find optimal servers (Min Load)
+        min_load = min(loads.values())
+        optimal_servers = [sid for sid, load in loads.items() if load == min_load]
+        
+        # Case 1: All servers are equal (Tie)
+        if len(optimal_servers) == len(loads):
             return 0.0
             
-        avg_other_load = sum(other_loads) / len(other_loads)
-        
-        return avg_other_load - chosen_load
+        chosen_cpu = parsed_states[chosen_server_id]['cpu']
+        chosen_mem = parsed_states[chosen_server_id]['memory']
+            
+        # Case 2: Optimal Choice
+        if chosen_server_id in optimal_servers:
+            # Positive reward vs Suboptimal
+            suboptimal_servers = [sid for sid in loads.keys() if sid not in optimal_servers]
+            
+            avg_suboptimal_cpu = sum(parsed_states[sid]['cpu'] for sid in suboptimal_servers) / len(suboptimal_servers)
+            avg_suboptimal_mem = sum(parsed_states[sid]['memory'] for sid in suboptimal_servers) / len(suboptimal_servers)
+            
+            cpu_reward = avg_suboptimal_cpu - chosen_cpu
+            mem_reward = avg_suboptimal_mem - chosen_mem
+            
+            return cpu_reward + mem_reward
+            
+        # Case 3: Suboptimal Choice
+        else:
+            # Negative penalty vs Optimal
+            avg_optimal_cpu = sum(parsed_states[sid]['cpu'] for sid in optimal_servers) / len(optimal_servers)
+            avg_optimal_mem = sum(parsed_states[sid]['memory'] for sid in optimal_servers) / len(optimal_servers)
+            
+            cpu_reward = avg_optimal_cpu - chosen_cpu
+            mem_reward = avg_optimal_mem - chosen_mem
+            
+            return cpu_reward + mem_reward
 
