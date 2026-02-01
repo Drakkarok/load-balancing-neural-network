@@ -121,10 +121,11 @@ def train(resume=False):
                     
                     # Store data for metrics
                     episode_data.append({
-                        "server_states": info.get("server_states"),
-                        "chosen_server": info.get("chosen_server"),
-                        "reward": reward
-                    })
+                    "server_states": info.get("server_states"),
+                    "prev_server_states": info.get("prev_server_states"), 
+                    "chosen_server": info.get("chosen_server"),
+                    "reward": reward
+                })
                     total_reward += reward
                 
                 # End of Episode
