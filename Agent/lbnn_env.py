@@ -92,6 +92,10 @@ class LBNNEnv(gym.Env):
         """
         self.current_step += 1
         
+        # Capture Pre-Action state for Metrics (Deep Copy to avoid reference issues)
+        import copy
+        pre_action_state = copy.deepcopy(self.last_server_states)
+        
         chosen_server_id = f"server-{action+1}"
         
         # FIX 1: Calculate Reward based on PRE-ACTION state (Timing Bug Fix)
@@ -137,7 +141,7 @@ class LBNNEnv(gym.Env):
             info = {
                 "server_states": current_server_states,
                 "chosen_server": chosen_server_id,
-                "prev_server_states": self.last_server_states # Debug info
+                "prev_server_states": pre_action_state # Correct Pre-Action state for Metrics
             }
             
         except Exception as e:
@@ -214,6 +218,8 @@ class LBNNEnv(gym.Env):
         3. If Chosen in Optimal Group: Reward = Avg(Suboptimal) - Chosen.
         4. If Chosen in Suboptimal Group: Penalty = Avg(Optimal) - Chosen.
         5. If Tie (All Equal): Reward = 0.
+        
+        Using Scaling Factor: 1/100 to normalize rewards for NN stability.
         """
         # 1. Parse states into simplified Load dict
         loads = {}
@@ -239,6 +245,8 @@ class LBNNEnv(gym.Env):
             
         chosen_cpu = parsed_states[chosen_server_id]['cpu']
         chosen_mem = parsed_states[chosen_server_id]['memory']
+        
+        reward = 0.0
             
         # Case 2: Optimal Choice
         if chosen_server_id in optimal_servers:
@@ -251,7 +259,7 @@ class LBNNEnv(gym.Env):
             cpu_reward = avg_suboptimal_cpu - chosen_cpu
             mem_reward = avg_suboptimal_mem - chosen_mem
             
-            return cpu_reward + mem_reward
+            reward = cpu_reward + mem_reward
             
         # Case 3: Suboptimal Choice
         else:
@@ -262,5 +270,8 @@ class LBNNEnv(gym.Env):
             cpu_reward = avg_optimal_cpu - chosen_cpu
             mem_reward = avg_optimal_mem - chosen_mem
             
-            return cpu_reward + mem_reward
+            reward = cpu_reward + mem_reward
+            
+        # Scale Reward
+        return reward / 100.0
 

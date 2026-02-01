@@ -57,7 +57,12 @@ class EpisodeMetrics:
     
     def _is_optimal_decision(self, tick_data):
         """Check if chosen server had min total load"""
-        servers = tick_data.get("server_states", {})
+        # FIX: Use PRE-ACTION state to judge decision quality
+        servers = tick_data.get("prev_server_states")
+        if not servers:
+            # Fallback for backward compatibility
+            servers = tick_data.get("server_states", {})
+            
         chosen_id = tick_data.get("chosen_server")
         
         if not servers or not chosen_id:
