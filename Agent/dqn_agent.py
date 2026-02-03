@@ -5,17 +5,7 @@ import numpy as np
 import random
 from dqn_model import DQN
 from replay_buffer import ReplayBuffer
-
-# Hyperparameters
-BATCH_SIZE = 32
-GAMMA = 0.99
-EPSILON_START = 1.0
-EPSILON_END = 0.01
-EPSILON_DECAY = 0.995
-TAU = 0.005
-LEARNING_RATE = 0.001
-REPLAY_BUFFER_SIZE = 10000
-MIN_REPLAY_SIZE = 1000
+import config
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -30,13 +20,14 @@ class DQNAgent:
         self.target_net.eval()
         
         # Optimizer
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=LEARNING_RATE)
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=config.LEARNING_RATE)
         
         # Replay Buffer
-        self.memory = ReplayBuffer(REPLAY_BUFFER_SIZE)
+        self.memory = ReplayBuffer(config.REPLAY_BUFFER_SIZE)
         
         # Exploration
-        self.epsilon = EPSILON_START
+        self.epsilon = config.EPSILON_START
+        self.epsilon_decay = config.EPSILON_DECAY # Allow runtime modification
         self.steps_done = 0
         
     def select_action(self, state, eval_mode=False):
@@ -63,15 +54,15 @@ class DQNAgent:
             
     def update_epsilon(self):
         """Decay epsilon"""
-        self.epsilon = max(EPSILON_END, self.epsilon * EPSILON_DECAY)
+        self.epsilon = max(config.EPSILON_MIN, self.epsilon * self.epsilon_decay)
         
     def optimize_model(self):
         """Perform one step of optimization"""
-        if len(self.memory) < MIN_REPLAY_SIZE:
+        if len(self.memory) < config.MIN_REPLAY_SIZE:
             return 0.0 # Not enough data
             
         # Sample batch
-        states, actions, rewards, next_states, dones = self.memory.sample(BATCH_SIZE)
+        states, actions, rewards, next_states, dones = self.memory.sample(config.BATCH_SIZE)
         
         # Convert to tensors
         state_batch = torch.FloatTensor(states).to(device)
@@ -90,7 +81,7 @@ class DQNAgent:
             next_state_values = self.target_net(next_state_batch).max(1)[0]
             
         # Compute expected Q values: reward + gamma * max_a Q(s', a) * (1 - done)
-        expected_state_action_values = reward_batch + (GAMMA * next_state_values * (1 - done_batch))
+        expected_state_action_values = reward_batch + (config.GAMMA * next_state_values * (1 - done_batch))
         
         # Compute Loss (MSE or Huber)
         criterion = torch.nn.MSELoss()
@@ -100,7 +91,7 @@ class DQNAgent:
         self.optimizer.zero_grad()
         loss.backward()
         # Gradient clipping (optional but recommended)
-        torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
+        torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), config.GRAD_CLIP_VALUE)
         self.optimizer.step()
         
         # Soft Update Target Network
@@ -108,7 +99,7 @@ class DQNAgent:
         target_net_state_dict = self.target_net.state_dict()
         policy_net_state_dict = self.policy_net.state_dict()
         for key in policy_net_state_dict:
-            target_net_state_dict[key] = policy_net_state_dict[key]*TAU + target_net_state_dict[key]*(1-TAU)
+            target_net_state_dict[key] = policy_net_state_dict[key]*config.TAU + target_net_state_dict[key]*(1-config.TAU)
         self.target_net.load_state_dict(target_net_state_dict)
         
         return loss.item()
@@ -125,4 +116,5 @@ class DQNAgent:
         self.policy_net.load_state_dict(checkpoint['model_state_dict'])
         self.target_net.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.epsilon = checkpoint.get('epsilon', EPSILON_START)
+        self.epsilon = checkpoint.get('epsilon', config.EPSILON_START)
+

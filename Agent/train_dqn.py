@@ -59,13 +59,79 @@ def train(resume=False):
     start_episode = 0
     
     # Resume Logic
-    if resume:
+    # Resume Logic
+    if args.resume:
         print("Checking for checkpoints to resume...")
         ckpt_path, ckpt_episode = find_latest_checkpoint(config.CHECKPOINT_DIR)
+        
         if ckpt_path:
-            print(f"Resuming form checkpoint: {ckpt_path} (Episode {ckpt_episode})")
+            print(f"Found checkpoint: {ckpt_path} (Episode {ckpt_episode})")
             agent.load_checkpoint(ckpt_path)
             start_episode = ckpt_episode
+            
+            # 1. Determine Phase
+            current_phase = "Unknown"
+            phase_defaults = {}
+            if ckpt_episode <= config.PHASE_1_EPISODES:
+                current_phase = "Phase 1"
+                phase_defaults = {"episode_length": config.PHASE_1_LENGTH}
+            elif ckpt_episode <= config.PHASE_1_EPISODES + config.PHASE_2_EPISODES:
+                current_phase = "Phase 2"
+                phase_defaults = {"episode_length": config.PHASE_2_LENGTH}
+            else:
+                current_phase = "Phase 3"
+                phase_defaults = {"episode_length": config.PHASE_3_LENGTH}
+            
+            # 2. Show Current Parameters (from checkpoint + config)
+            print(f"\n--- Resume Configuration (Phase: {current_phase}) ---")
+            print(f"Current Parameters:")
+            print(f"  epsilon: {agent.epsilon:.4f}")
+            print(f"  epsilon_decay: {agent.epsilon_decay} (Config: {config.EPSILON_DECAY})")
+            for pg in agent.optimizer.param_groups:
+                print(f"  lr: {pg['lr']:.6f}")
+            print(f"  grad_clip: {config.GRAD_CLIP_VALUE}") 
+            print(f"  episode_length: {phase_defaults.get('episode_length', 'N/A')} (Default for current phase)")
+            
+            # 3. Interactive Prompt
+            use_defaults = input("\nResume with these parameters? [Y/n]: ").strip().lower()
+            
+            if use_defaults == 'n':
+                print("\nEnter new parameters (format: key=value). Supported keys: epsilon, lr, decay, grad_clip")
+                print("Example: epsilon=0.5 lr=0.0001 decay=0.999")
+                user_input = input("> ").strip()
+                
+                # 4. Parse Overrides
+                try:
+                    changes = dict(item.split("=") for item in user_input.split())
+                    
+                    if "epsilon" in changes:
+                        new_eps = float(changes["epsilon"])
+                        print(f"-> Overriding epsilon: {agent.epsilon} -> {new_eps}")
+                        agent.epsilon = new_eps
+                        
+                    if "lr" in changes:
+                        new_lr = float(changes["lr"])
+                        print(f"-> Overriding learning rate: {new_lr}")
+                        for pg in agent.optimizer.param_groups:
+                            pg['lr'] = new_lr
+                    
+                    if "decay" in changes:
+                        new_decay = float(changes["decay"])
+                        print(f"-> Overriding epsilon_decay: {agent.epsilon_decay} -> {new_decay}")
+                        agent.epsilon_decay = new_decay
+
+                    if "grad_clip" in changes:
+                        new_clip = float(changes["grad_clip"])
+                        print(f"-> Overriding grad_clip: {config.GRAD_CLIP_VALUE} -> {new_clip}")
+                        config.GRAD_CLIP_VALUE = new_clip
+                            
+                except ValueError:
+                    print("Invalid format! using default values.")
+                except Exception as e:
+                    print(f"Error parsing input: {e}. Using default values.")
+            
+            print(f"\nResuming training from Episode {start_episode+1} with Epsilon {agent.epsilon:.4f}...")
+            
         else:
             print("No checkpoint found. Starting from scratch.")
     
