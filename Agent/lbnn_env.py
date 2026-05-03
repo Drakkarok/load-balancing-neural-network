@@ -37,9 +37,9 @@ class LBNNEnv(gym.Env):
         
         # Request generation configuration (matching K6)
         self.request_types = [
-            {"cpu": 50, "memory": 30, "duration": 2},    # Light
-            {"cpu": 150, "memory": 100, "duration": 4},  # Medium
-            {"cpu": 300, "memory": 200, "duration": 6}   # Heavy
+            {"cpu_cost": 50, "memory_cost": 30, "duration": 2},    # Light
+            {"cpu_cost": 150, "memory_cost": 100, "duration": 4},  # Medium
+            {"cpu_cost": 300, "memory_cost": 200, "duration": 6}   # Heavy
         ]
         
         # Normalization constants
@@ -200,8 +200,8 @@ class LBNNEnv(gym.Env):
         # Normalize Request
         if request:
             req_vec = [
-                request["cpu"] / self.MAX_CPU,
-                request["memory"] / self.MAX_MEM,
+                request["cpu_cost"] / self.MAX_CPU,
+                request["memory_cost"] / self.MAX_MEM,
                 request["duration"] / self.MAX_DURATION
             ]
         else:

@@ -22,7 +22,6 @@ class LoadBalancerAgent:
         # Episode tracking
         self.episode_length = 20  # requests per episode (configurable)
         self.current_episode_requests = 0
-        self.trainer_url = "http://lbnn-trainer:8084"
         
         # Initialize by getting current server states
         
@@ -137,35 +136,6 @@ class LoadBalancerAgent:
         with self.state_lock:
             return self.server_states.copy()
     
-    def trigger_trainer(self):
-        """Trigger trainer when episode completes"""
-        print(f"=== EPISODE {self.current_episode_requests} COMPLETE ===")
-        print("Triggering trainer...")
-        
-        try:
-            response = requests.post(
-                f"{self.trainer_url}/start_training",
-                json={
-                    "episode_requests": self.current_episode_requests,
-                    "episode_ticks": self.current_tick,
-                    "triggered_by": "agent"
-                },
-                timeout=60  # Give trainer time to process
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                print("Trainer completed successfully!")
-                print(f"Analysis: {result.get('analysis', {})}")
-                return True
-            else:
-                print(f"Trainer failed: {response.status_code} - {response.text}")
-                return False
-                
-        except Exception as e:
-            print(f"Error triggering trainer: {e}")
-            return False
-    
     def reset_episode(self, hard_reset=False):
         """Reset episode counter and optionally servers"""
         print("Resetting episode...")
@@ -212,30 +182,13 @@ def route_request():
     # Update server states from responses
     agent.update_server_states(responses)
     
-    # Track episode progress
-    agent.current_episode_requests += 1
-    
-    # Check if episode complete
-    episode_complete = False
-    if agent.current_episode_requests >= agent.episode_length:
-        print(f"\n=== EPISODE COMPLETE ({agent.episode_length} requests) ===")
-        
-        # Trigger trainer (this might take a while)
-        trainer_success = agent.trigger_trainer()
-        
-        # Reset for next episode
-        agent.reset_episode()
-        episode_complete = True
-    
     # Signal to k6 when Agent is ready for next request
     return {
         "status": "routed",
         "tick_id": tick_id,
-        "chosen_server": chosen_server['id'], # Debugging purposes
-        "server_responses": len(responses), # Debugging purposes
-        "current_server_states": agent.get_current_server_states(), # Debugging purposes
-        "episode_progress": f"{agent.current_episode_requests}/{agent.episode_length}",
-        "episode_complete": episode_complete
+        "chosen_server": chosen_server['id'],
+        "server_responses": len(responses),
+        "current_server_states": agent.get_current_server_states()
     }
 
 @app.route('/server_states')

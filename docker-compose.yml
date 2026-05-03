@@ -41,16 +41,6 @@ services:
       - lbnn-network
     container_name: lbnn-server-3
 
-  trainer:
-    build: ./Trainer
-    ports:
-      - "8084:8084"
-    volumes:
-      - ./models:/app/models  
-    networks:
-      - lbnn-network
-    container_name: lbnn-trainer
-
   k6:
     build: ./K6
     depends_on:

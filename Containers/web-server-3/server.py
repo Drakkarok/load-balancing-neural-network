@@ -36,9 +36,9 @@ def update_to_tick(tick_id):
 
 def add_real_request(request_data, tick_id):
     """Add a new real request that will consume resources for N ticks"""
-    duration_ticks = request_data.get('duration', 5)  # Duration in ticks
-    cpu_cost = request_data.get('cpu_cost', 10) # Cost in adminesional units
-    memory_cost = request_data.get('memory_cost', 5) # Cost in adminesional units
+    duration_ticks = request_data['duration']
+    cpu_cost = request_data['cpu_cost']
+    memory_cost = request_data['memory_cost']
     
     # Add request that will expire after duration_ticks
     server_state["active_requests"].append({
