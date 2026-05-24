@@ -2,9 +2,9 @@
 # Hyperparameters and Constants
 
 # Network
-STATE_DIM = 12
+STATE_DIM = 48
 ACTION_DIM = 3
-HIDDEN_DIMS = [64, 64, 32]
+HIDDEN_DIMS = [128, 128, 64]
 
 # Training
 BATCH_SIZE = 32

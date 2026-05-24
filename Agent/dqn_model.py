@@ -3,30 +3,26 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from config import STATE_DIM, ACTION_DIM, HIDDEN_DIMS
+
 class DQN(nn.Module):
     """
     Deep Q-Network for LBNN.
-    Input: State vector (12 features)
-    Output: Q-values for 3 actions (server-1, server-2, server-3)
+    Input: State vector (STATE_DIM features)
+    Output: Q-values for ACTION_DIM actions (server-1, server-2, server-3)
+    Architecture driven by HIDDEN_DIMS in config.py.
     """
-    def __init__(self, state_dim=12, action_dim=3):
+    def __init__(self, state_dim=STATE_DIM, action_dim=ACTION_DIM, hidden_dims=HIDDEN_DIMS):
         super(DQN, self).__init__()
-        
-        # Architecture: 12 -> 64 -> 64 -> 32 -> 3
-        self.fc1 = nn.Linear(state_dim, 64)
-        self.fc2 = nn.Linear(64, 64)
-        self.fc3 = nn.Linear(64, 32)
-        self.fc4 = nn.Linear(32, action_dim)
-        
+
+        layer_sizes = [state_dim] + hidden_dims + [action_dim]
+        layers = []
+        for i in range(len(layer_sizes) - 2):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i + 1]))
+            layers.append(nn.ReLU())
+        layers.append(nn.Linear(layer_sizes[-2], layer_sizes[-1]))  # output, no activation
+
+        self.net = nn.Sequential(*layers)
+
     def forward(self, x):
-        """
-        Forward pass.
-        Args:
-            x (torch.Tensor): State tensor of shape (batch_size, state_dim)
-        Returns:
-            torch.Tensor: Q-values of shape (batch_size, action_dim)
-        """
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        return self.fc4(x) # Linear output (Q-values)
+        return self.net(x)

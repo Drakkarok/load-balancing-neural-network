@@ -10,7 +10,7 @@ import config
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class DQNAgent:
-    def __init__(self, state_dim=12, action_dim=3):
+    def __init__(self, state_dim=config.STATE_DIM, action_dim=config.ACTION_DIM):
         self.action_dim = action_dim
         
         # Networks
