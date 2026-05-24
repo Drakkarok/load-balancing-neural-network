@@ -54,23 +54,47 @@ def add_real_request(request_data, tick_id):
 
 def update_resource_usage():
     """Calculate current resource usage based on active requests and server capacity"""
-    config = get_server_config()  
-    
+    config = get_server_config()
+
     total_cpu_load = sum(req["cpu_cost"] for req in server_state["active_requests"])
     total_memory_load = sum(req["memory_cost"] for req in server_state["active_requests"])
-    
+
     # Calculate percentage usage based on server capacity
     server_state["cpu_usage"] = min(100, (total_cpu_load / config["max_cpu"]) * 100)
     server_state["memory_usage"] = min(100, (total_memory_load / config["max_memory"]) * 100)
     server_state["active_connections"] = len(server_state["active_requests"])
 
+def get_bracket_counts(tick_id):
+    """Sum CPU and memory costs of active requests grouped by remaining-tick bracket.
+    LOW: 1-7 remaining ticks, MID: 8-14, HIGH: 15-21.
+    Returns raw cost sums (normalization happens in the env).
+    """
+    brackets = {
+        "cpu": {"low": 0.0, "mid": 0.0, "high": 0.0},
+        "mem": {"low": 0.0, "mid": 0.0, "high": 0.0}
+    }
+    for req in server_state["active_requests"]:
+        remaining = req["expires_at_tick"] - tick_id
+        if 1 <= remaining <= 7:
+            key = "low"
+        elif 8 <= remaining <= 14:
+            key = "mid"
+        elif 15 <= remaining <= 21:
+            key = "high"
+        else:
+            continue
+        brackets["cpu"][key] += req["cpu_cost"]
+        brackets["mem"][key] += req["memory_cost"]
+    return brackets
+
 def get_current_metrics():
     """Get current server metrics"""
     return {
         "cpu": round(server_state["cpu_usage"], 2),
-        "memory": round(server_state["memory_usage"], 2), 
+        "memory": round(server_state["memory_usage"], 2),
         "connections": server_state["active_connections"],
-        "tick": server_state["current_tick"]
+        "tick": server_state["current_tick"],
+        "bracket_counts": get_bracket_counts(server_state["current_tick"])
     }
     
 def get_server_config():
