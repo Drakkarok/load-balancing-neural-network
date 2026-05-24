@@ -59,7 +59,6 @@ def train(resume=False):
     start_episode = 0
     
     # Resume Logic
-    # Resume Logic
     if args.resume:
         print("Checking for checkpoints to resume...")
         ckpt_path, ckpt_episode = find_latest_checkpoint(config.CHECKPOINT_DIR)

@@ -35,17 +35,10 @@ class LBNNEnv(gym.Env):
         # FIX: Cache the server states BEFORE the action is taken usually
         self.last_server_states = {} 
         
-        # Request generation configuration (matching K6)
-        self.request_types = [
-            {"cpu_cost": 50, "memory_cost": 30, "duration": 2},    # Light
-            {"cpu_cost": 150, "memory_cost": 100, "duration": 4},  # Medium
-            {"cpu_cost": 300, "memory_cost": 200, "duration": 6}   # Heavy
-        ]
-        
         # Normalization constants
-        self.MAX_CPU = 5000.0  # server-3
-        self.MAX_MEM = 3200.0  # server-2
-        self.MAX_DURATION = 6.0
+        self.MAX_CPU = 5000.0  # server-3 capacity
+        self.MAX_MEM = 3200.0  # server-2 capacity
+        self.MAX_DURATION = 21.0  # max ticks (heavy range top)
         self.MAX_CONNECTIONS = 10.0 # Estimated max
 
         # Use a session for persistent connections to Agent
@@ -151,9 +144,29 @@ class LBNNEnv(gym.Env):
         return observation, reward, done, truncated, info
 
     def _generate_request(self):
-        """Generate a random request based on types"""
-        req = random.choice(self.request_types).copy()
-        return req
+        """Generate a random request from light/medium/heavy with per-field randomness"""
+        req_type = random.choice(["light", "medium", "heavy"])
+        if req_type == "light":
+            return {
+                "cpu_cost": random.randint(150, 200),
+                "memory_cost": random.randint(100, 125),
+                "duration": int(np.clip(round(np.random.normal(5.0, 2.0)), 1, 9)),
+                "type": "light"
+            }
+        elif req_type == "medium":
+            return {
+                "cpu_cost": random.randint(350, 400),
+                "memory_cost": random.randint(300, 350),
+                "duration": int(np.clip(round(np.random.normal(10.5, 2.5)), 5, 16)),
+                "type": "medium"
+            }
+        else:
+            return {
+                "cpu_cost": random.randint(400, 500),
+                "memory_cost": random.randint(400, 450),
+                "duration": int(np.clip(round(np.random.normal(16.5, 2.0)), 12, 21)),
+                "type": "heavy"
+            }
 
     def _get_server_states(self):
         """Fetch current states from Agent"""

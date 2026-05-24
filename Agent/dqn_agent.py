@@ -49,9 +49,10 @@ class DQNAgent:
                 state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
                 q_values = self.policy_net(state_tensor)
                 return q_values.argmax().item()
+        # else random choice by default
         else:
             return random.randint(0, self.action_dim - 1)
-            
+
     def update_epsilon(self):
         """Decay epsilon"""
         self.epsilon = max(config.EPSILON_MIN, self.epsilon * self.epsilon_decay)
@@ -92,6 +93,7 @@ class DQNAgent:
         loss.backward()
         # Gradient clipping (optional but recommended)
         torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), config.GRAD_CLIP_VALUE)
+        # Update policty netwrok after gradient clipping
         self.optimizer.step()
         
         # Soft Update Target Network
@@ -99,6 +101,7 @@ class DQNAgent:
         target_net_state_dict = self.target_net.state_dict()
         policy_net_state_dict = self.policy_net.state_dict()
         for key in policy_net_state_dict:
+            # Update target netwrok based on policy
             target_net_state_dict[key] = policy_net_state_dict[key]*config.TAU + target_net_state_dict[key]*(1-config.TAU)
         self.target_net.load_state_dict(target_net_state_dict)
         

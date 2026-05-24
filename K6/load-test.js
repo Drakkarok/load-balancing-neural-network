@@ -1,16 +1,29 @@
 import http from "k6/http";
 import { check, sleep } from "k6";
 
-// Define request types with different load characteristics
-const requestTypes = [
-    // ! Redefine these so they make sense ~ 10 cpu => 10000 resursa cpu total, fa-le sa varieze random intr-un interval. Ca sa ai cele 3 cazuri
-    // maybe pot varia si duratia si light medium hard sa fie overall, si sa am alte doua taguri, resource intensive si duration,
-    // resurce intensive (high) + duration (high) => hard task. un fel de sistem in care sa am mai multe tagguri. poate ma ajuta la partea
-    // de ML sa am mai multe taguri sau sa fie mai granulare.
-    { type: "light", cpu_cost: 50, memory_cost: 30, duration: 2 },
-    { type: "medium", cpu_cost: 150, memory_cost: 100, duration: 4 },
-    { type: "heavy", cpu_cost: 300, memory_cost: 200, duration: 6 },
-];
+function randInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function normalInt(mean, std, min, max) {
+    // Box-Muller transform
+    const u = 1 - Math.random();
+    const v = Math.random();
+    const z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    return Math.min(max, Math.max(min, Math.round(mean + z * std)));
+}
+
+function generateRequest() {
+    const types = ["light", "medium", "heavy"];
+    const type = types[Math.floor(Math.random() * types.length)];
+    if (type === "light") {
+        return { type, cpu_cost: randInt(150, 200), memory_cost: randInt(100, 125), duration: normalInt(5.0, 2.0, 1, 9) };
+    } else if (type === "medium") {
+        return { type, cpu_cost: randInt(350, 400), memory_cost: randInt(300, 350), duration: normalInt(10.5, 2.5, 5, 16) };
+    } else {
+        return { type, cpu_cost: randInt(400, 500), memory_cost: randInt(400, 450), duration: normalInt(16.5, 2.0, 12, 21) };
+    }
+}
 
 export const options = {
     stages: [
@@ -19,9 +32,7 @@ export const options = {
 };
 
 export default function () {
-    // Pick a random request type
-    const requestType =
-        requestTypes[Math.floor(Math.random() * requestTypes.length)];
+    const requestType = generateRequest();
 
     console.log(
         `Sending ${requestType.type} request: CPU=${requestType.cpu_cost}, Memory=${requestType.memory_cost}, Duration=${requestType.duration}`
