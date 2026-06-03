@@ -2,7 +2,7 @@
 # Hyperparameters and Constants
 
 # Network
-STATE_DIM = 48
+STATE_DIM = 66
 ACTION_DIM = 3
 HIDDEN_DIMS = [128, 128, 64]
 
@@ -21,6 +21,10 @@ MIN_REPLAY_SIZE = 1000
 EPSILON_START = 1.0
 EPSILON_DECAY = 0.995
 EPSILON_MIN = 0.01
+
+# EMA warmup: steps run at episode start before transitions enter the replay buffer.
+# After 40 steps the initial seed's influence on EMA is < 2% (alpha=0.095, N=20).
+EMA_WARMUP_STEPS = 40
 
 # Curriculum (Episodes)
 PHASE_1_EPISODES = 1000

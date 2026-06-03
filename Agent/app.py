@@ -45,7 +45,11 @@ class LoadBalancerAgent:
                     # Initialize with empty state structure
                     self.server_states[server['id']] = {
                         "cpu": 0.0, "memory": 0.0, "connections": 0, "tick": 0,
-                        "bracket_counts": {"cpu": {"low": 0.0, "mid": 0.0, "high": 0.0}, "mem": {"low": 0.0, "mid": 0.0, "high": 0.0}}
+                        "bracket_counts": {
+                            "cpu":   {"low": 0.0, "mid": 0.0, "high": 0.0},
+                            "mem":   {"low": 0.0, "mid": 0.0, "high": 0.0},
+                            "count": {"low": 0,   "mid": 0,   "high": 0}
+                        }
                     }
             except Exception as e:
                 print(f"Failed to initialize {server['id']}: {e}")

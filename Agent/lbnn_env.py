@@ -6,14 +6,15 @@ import requests
 import random
 import copy
 
-from config import SERVER_CAPACITIES
+from config import SERVER_CAPACITIES, EMA_WARMUP_STEPS
 
 # Use localhost for training since the training script runs on the host
 AGENT_URL = "http://localhost:8080"
 
 _EMPTY_BRACKETS = {
-    "cpu": {"low": 0.0, "mid": 0.0, "high": 0.0},
-    "mem": {"low": 0.0, "mid": 0.0, "high": 0.0}
+    "cpu":   {"low": 0.0, "mid": 0.0, "high": 0.0},
+    "mem":   {"low": 0.0, "mid": 0.0, "high": 0.0},
+    "count": {"low": 0,   "mid": 0,   "high": 0}
 }
 
 class LBNNEnv(gym.Env):
@@ -30,10 +31,15 @@ class LBNNEnv(gym.Env):
         # Action space: 0, 1, 2 (corresponding to server-1, server-2, server-3)
         self.action_space = spaces.Discrete(3)
 
-        # Observation space: 48 features per the expanded state spec.
+        # Observation space: 66 features per the expanded state spec.
         # Delta features can be negative, so bounds are [-1, 1].
-        # Layout: [15 per server × 3 servers] + [3 request features]
-        self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(48,), dtype=np.float32)
+        # Layout: [21 per server × 3 servers] + [3 request features]
+        # Per server: cpu_util, mem_util, conn (3)
+        #             cpu_brk×3, mem_brk×3 (6)
+        #             count_brk×3 (3)  ← NEW
+        #             count_delta×3 (3) ← NEW
+        #             cpu_delta×3, mem_delta×3 (6)
+        self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(66,), dtype=np.float32)
 
         # State tracking
         self.current_request = None
@@ -43,9 +49,10 @@ class LBNNEnv(gym.Env):
         # Cache server states BEFORE the action is taken
         self.last_server_states = {}
 
-        # Normalization constants for request features
-        self.MAX_CPU = 5000.0       # server-3 capacity (request cost reference)
-        self.MAX_MEM = 3200.0       # server-2 capacity (request cost reference)
+        # Normalization constants for request features — derived from config so they
+        # stay in sync if server capacities ever change.
+        self.MAX_CPU      = max(cap["cpu"]    for cap in SERVER_CAPACITIES.values())
+        self.MAX_MEM      = max(cap["memory"] for cap in SERVER_CAPACITIES.values())
         self.MAX_DURATION = 21.0    # max ticks (heavy range top)
         self.MAX_CONNECTIONS = 21.0  # max possible concurrent requests (heavy duration cap)
 
@@ -74,8 +81,13 @@ class LBNNEnv(gym.Env):
 
         self.current_request = self._generate_request()
         self.last_server_states = self._get_server_states()
-        observation = self._construct_state(self.last_server_states, self.current_request)
 
+        # Warm up EMA over EMA_WARMUP_STEPS ticks before the episode proper begins.
+        # These transitions are discarded — they only serve to drive the EMA past its
+        # cold-start period so delta features carry real signal from step 1.
+        self._run_warmup()
+
+        observation = self._construct_state(self.last_server_states, self.current_request)
         return observation, {}
 
     def step(self, action):
@@ -115,7 +127,8 @@ class LBNNEnv(gym.Env):
             info = {
                 "server_states": current_server_states,
                 "chosen_server": chosen_server_id,
-                "prev_server_states": pre_action_state
+                "prev_server_states": pre_action_state,
+                "request": payload["request"]
             }
 
         except Exception as e:
@@ -167,14 +180,43 @@ class LBNNEnv(gym.Env):
             }
 
     # ------------------------------------------------------------------
+    # EMA warmup
+    # ------------------------------------------------------------------
+
+    def _run_warmup(self):
+        """Run EMA_WARMUP_STEPS ticks with random actions before the episode starts.
+        Transitions are discarded — only the EMA and server state are updated.
+        """
+        for _ in range(EMA_WARMUP_STEPS):
+            action = self.action_space.sample()
+            payload = {
+                "request": self.current_request,
+                "forced_action": int(action)
+            }
+            try:
+                response = self.session.post(
+                    f"{AGENT_URL}/step_training", json=payload, timeout=60
+                )
+                data = response.json()
+                server_states = data.get("current_server_states", {})
+                self.last_server_states = server_states
+                self.current_request = self._generate_request()
+                # Update EMA state — observation is thrown away
+                self._construct_state(server_states, self.current_request)
+            except Exception as e:
+                print(f"Warmup step failed: {e}")
+                break
+
+    # ------------------------------------------------------------------
     # EMA helpers
     # ------------------------------------------------------------------
 
     def _init_ema(self):
         self._ema = {
             sid: {
-                "cpu": {"low": None, "mid": None, "high": None},
-                "mem": {"low": None, "mid": None, "high": None}
+                "cpu":   {"low": None, "mid": None, "high": None},
+                "mem":   {"low": None, "mid": None, "high": None},
+                "count": {"low": None, "mid": None, "high": None}
             }
             for sid in ["server-1", "server-2", "server-3"]
         }
@@ -194,14 +236,14 @@ class LBNNEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def _construct_state(self, server_states, request):
-        """Build 48-dim observation vector.
+        """Build 66-dim observation vector.
 
-        Per server (15 values × 3 = 45):
-          [cpu_util, mem_util, connections,
-           cpu_low, cpu_mid, cpu_high,
-           mem_low, mem_mid, mem_high,
-           cpu_low_delta, cpu_mid_delta, cpu_high_delta,
-           mem_low_delta, mem_mid_delta, mem_high_delta]
+        Per server (21 values × 3 = 63):
+          [0-2]   cpu_util, mem_util, connections
+          [3-8]   cpu_brk_low/mid/high, mem_brk_low/mid/high  (cost-weighted)
+          [9-11]  count_brk_low/mid/high                       (raw request counts)
+          [12-14] count_delta_low/mid/high                     (EMA deltas of counts)
+          [15-20] cpu_delta_low/mid/high, mem_delta_low/mid/high
 
         Request (3 values):
           [cpu_cost, memory_cost, duration]
@@ -224,7 +266,7 @@ class LBNNEnv(gym.Env):
             vec.append(s.get("memory", 0) / 100.0)
             vec.append(min(s.get("connections", 0) / self.MAX_CONNECTIONS, 1.0))
 
-            # --- normalized bracket sums (6) ---
+            # --- cost-weighted bracket sums (6) ---
             cpu_b = {
                 k: min(brackets["cpu"].get(k, 0.0) / cap["cpu"], 1.0)
                 for k in ["low", "mid", "high"]
@@ -236,7 +278,18 @@ class LBNNEnv(gym.Env):
             vec.extend([cpu_b["low"], cpu_b["mid"], cpu_b["high"]])
             vec.extend([mem_b["low"], mem_b["mid"], mem_b["high"]])
 
-            # --- EMA deltas (6) ---
+            # --- raw count brackets (3) ---
+            cnt_b = {
+                k: min(brackets["count"].get(k, 0) / self.MAX_CONNECTIONS, 1.0)
+                for k in ["low", "mid", "high"]
+            }
+            vec.extend([cnt_b["low"], cnt_b["mid"], cnt_b["high"]])
+
+            # --- count EMA deltas (3) ---
+            for key in ["low", "mid", "high"]:
+                vec.append(self._update_ema(sid, "count", key, cnt_b[key]))
+
+            # --- cost EMA deltas (6) ---
             for key in ["low", "mid", "high"]:
                 vec.append(self._update_ema(sid, "cpu", key, cpu_b[key]))
             for key in ["low", "mid", "high"]:

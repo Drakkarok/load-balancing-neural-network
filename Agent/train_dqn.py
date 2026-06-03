@@ -1,5 +1,6 @@
 
 import os
+import json
 import torch
 import numpy as np
 import logging
@@ -21,6 +22,38 @@ logging.basicConfig(
     level=logging.ERROR,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+
+def _to_serializable(obj):
+    """Recursively convert numpy types to Python natives for JSON."""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, dict):
+        return {k: _to_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_to_serializable(v) for v in obj]
+    return obj
+
+def _server_util(states):
+    """Extract only cpu/memory/connections from server states (drop bracket_counts)."""
+    if not states:
+        return {}
+    return {
+        sid: {k: v for k, v in s.items() if k in ("cpu", "memory", "connections")}
+        for sid, s in states.items()
+    }
+
+def append_episode_log(log_path, record):
+    """Append one episode as a JSON line (JSONL format — one object per line).
+    This keeps writes O(record_size) regardless of total file size.
+    To convert to a JSON array later: jq -s '.' training_log.jsonl
+    """
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    with open(log_path, "a") as f:
+        f.write(json.dumps(_to_serializable(record)) + "\n")
 
 def log_success(episode):
     with open(os.path.join(log_dir, "training_status.txt"), "a") as f:
@@ -184,18 +217,44 @@ def train(resume=False):
                     # Optimize
                     loss = agent.optimize_model()
                     
-                    # Store data for metrics
+                    # Store data for metrics + optional logging
                     episode_data.append({
-                    "server_states": info.get("server_states"),
-                    "prev_server_states": info.get("prev_server_states"), 
-                    "chosen_server": info.get("chosen_server"),
-                    "reward": reward
-                })
+                        "action": int(action),
+                        "chosen_server": info.get("chosen_server"),
+                        "reward": reward,
+                        "request": info.get("request"),
+                        "server_states": info.get("server_states"),
+                        "prev_server_states": info.get("prev_server_states"),
+                    })
                     total_reward += reward
                 
                 # End of Episode
                 agent.update_epsilon()
-                
+
+                # Optional structured log
+                if args.log:
+                    append_episode_log(args.log_file, {
+                        "episode": current_episode_tracker,
+                        "timestamp": datetime.now().isoformat(),
+                        "phase": phase_name,
+                        "episode_length": episode_len,
+                        "epsilon": float(agent.epsilon),
+                        "total_reward": float(total_reward),
+                        "mean_reward": float(total_reward / len(episode_data)) if episode_data else 0.0,
+                        "steps": [
+                            {
+                                "step": i + 1,
+                                "action": d["action"],
+                                "chosen_server": d["chosen_server"],
+                                "reward": d["reward"],
+                                "request": d["request"],
+                                "server_states_before": _server_util(d.get("prev_server_states")),
+                                "server_states_after":  _server_util(d.get("server_states")),
+                            }
+                            for i, d in enumerate(episode_data)
+                        ]
+                    })
+
                 # Calculate Metrics
                 ep_metrics = EpisodeMetrics()
                 ep_metrics.compute_from_episode(episode_data, agent.epsilon, current_episode_tracker)
@@ -229,6 +288,9 @@ def train(resume=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", action="store_true", help="Resume from latest checkpoint")
+    parser.add_argument("--log", action="store_true", help="Write per-episode JSON log")
+    parser.add_argument("--log-file", default="Models/logs/training_log.jsonl",
+                        help="Path for the JSONL log file (default: Models/logs/training_log.jsonl)")
     args = parser.parse_args()
 
     try:

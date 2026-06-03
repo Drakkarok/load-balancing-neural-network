@@ -70,8 +70,9 @@ def get_bracket_counts(tick_id):
     Returns raw cost sums (normalization happens in the env).
     """
     brackets = {
-        "cpu": {"low": 0.0, "mid": 0.0, "high": 0.0},
-        "mem": {"low": 0.0, "mid": 0.0, "high": 0.0}
+        "cpu":   {"low": 0.0, "mid": 0.0, "high": 0.0},
+        "mem":   {"low": 0.0, "mid": 0.0, "high": 0.0},
+        "count": {"low": 0,   "mid": 0,   "high": 0}
     }
     for req in server_state["active_requests"]:
         remaining = req["expires_at_tick"] - tick_id
@@ -83,8 +84,9 @@ def get_bracket_counts(tick_id):
             key = "high"
         else:
             continue
-        brackets["cpu"][key] += req["cpu_cost"]
-        brackets["mem"][key] += req["memory_cost"]
+        brackets["cpu"][key]   += req["cpu_cost"]
+        brackets["mem"][key]   += req["memory_cost"]
+        brackets["count"][key] += 1
     return brackets
 
 def get_current_metrics():
