@@ -38,11 +38,11 @@ def _to_serializable(obj):
     return obj
 
 def _server_util(states):
-    """Extract only cpu/memory/connections from server states (drop bracket_counts)."""
+    """Extract cpu/memory/connections/bracket_counts from server states (drop tick)."""
     if not states:
         return {}
     return {
-        sid: {k: v for k, v in s.items() if k in ("cpu", "memory", "connections")}
+        sid: {k: v for k, v in s.items() if k in ("cpu", "memory", "connections", "bracket_counts")}
         for sid, s in states.items()
     }
 
@@ -79,7 +79,7 @@ def find_latest_checkpoint(checkpoint_dir):
                 
     return latest_file, max_episode
 
-def train(resume=False):
+def train(resume=False, log=False, log_file="Models/logs/training_log.jsonl"):
     print("Initializing Environment and Agent...")
     try:
         env = LBNNEnv()
@@ -200,7 +200,7 @@ def train(resume=False):
                 
                 while not (done or truncated):
                     # Throttling to prevent CPU exhaustion on Windows Docker
-                    time.sleep(0.05) 
+                    time.sleep(0.01) 
 
                     # Select Action
                     action = agent.select_action(state)
@@ -232,8 +232,8 @@ def train(resume=False):
                 agent.update_epsilon()
 
                 # Optional structured log
-                if args.log:
-                    append_episode_log(args.log_file, {
+                if log:
+                    append_episode_log(log_file, {
                         "episode": current_episode_tracker,
                         "timestamp": datetime.now().isoformat(),
                         "phase": phase_name,
@@ -294,7 +294,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
-        train(resume=args.resume)
+        train(resume=args.resume, log=args.log, log_file=args.log_file)
     except KeyboardInterrupt:
         print("Training interrupted manually.")
     except Exception as e:
