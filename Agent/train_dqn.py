@@ -281,7 +281,7 @@ def train(resume=False, log=False, log_file=None):
                 logging.error(f"Error in Episode {current_episode_tracker}: {e}", exc_info=True)
                 consecutive_failures += 1
                 print(f"Error in Episode {current_episode_tracker}: {e}. "
-                      f"({consecutive_failures}/{MAX_CONSECUTIVE_FAILURES} consecutive failures)")
+                      f"({consecutive_failures}/{config.MAX_CONSECUTIVE_FAILURES} consecutive failures)")
                 if consecutive_failures >= config.MAX_CONSECUTIVE_FAILURES:
                     raise RuntimeError(
                         f"Training aborted: {config.MAX_CONSECUTIVE_FAILURES} consecutive episode failures. "
