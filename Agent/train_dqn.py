@@ -78,7 +78,9 @@ def find_latest_checkpoint(checkpoint_dir):
                 
     return latest_file, max_episode
 
-def train(resume=False, log=False, log_file="Models/logs/training_log.jsonl"):
+def train(resume=False, log=False, log_file=None):
+    if log_file is None:
+        log_file = os.path.join(config.LOG_DIR, "training_log.jsonl")
     print("Initializing Environment and Agent...")
     try:
         env = LBNNEnv()
@@ -91,7 +93,7 @@ def train(resume=False, log=False, log_file="Models/logs/training_log.jsonl"):
     start_episode = 0
     
     # Resume Logic
-    if args.resume:
+    if resume:
         print("Checking for checkpoints to resume...")
         ckpt_path, ckpt_episode = find_latest_checkpoint(config.CHECKPOINT_DIR)
         
