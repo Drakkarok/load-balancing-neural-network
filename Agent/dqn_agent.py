@@ -76,17 +76,15 @@ class DQNAgent:
         # policy_net(state_batch) -> [batch, 3]. gather(1, action_batch) -> [batch, 1]
         state_action_values = self.policy_net(state_batch).gather(1, action_batch)
         
-        # Compute V(s') for next states using Target Net
-        # We want max_a Q_target(s', a)
+        # Double DQN: online net selects a*, target net evaluates it
         with torch.no_grad():
-            next_state_values = self.target_net(next_state_batch).max(1)[0]
+            a_star = self.policy_net(next_state_batch).argmax(1, keepdim=True)
+            next_state_values = self.target_net(next_state_batch).gather(1, a_star).squeeze(1)
             
         # Compute expected Q values: reward + gamma * max_a Q(s', a) * (1 - done)
         expected_state_action_values = reward_batch + (config.GAMMA * next_state_values * (1 - done_batch))
         
-        # Compute Loss (MSE or Huber)
-        criterion = torch.nn.MSELoss()
-        loss = criterion(state_action_values.squeeze(), expected_state_action_values)
+        loss = torch.nn.functional.huber_loss(state_action_values.squeeze(), expected_state_action_values)
         
         # Optimize
         self.optimizer.zero_grad()

@@ -35,10 +35,12 @@ class LBNNEnv(gym.Env):
         # Delta features can be negative, so bounds are [-1, 1].
         # Layout: [21 per server × 3 servers] + [3 request features]
         # Per server: cpu_util, mem_util, conn (3)
-        #             cpu_brk×3, mem_brk×3 (6)
-        #             count_brk×3 (3)  ← NEW
-        #             count_delta×3 (3) ← NEW
-        #             cpu_delta×3, mem_delta×3 (6)
+        #             cpu_brk×3, 
+        #             mem_brk×3
+        #             cpu_delta×3, 
+        #             mem_delta×3
+        #             count_brk×3
+        #             count_delta×3
         self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(66,), dtype=np.float32)
 
         # State tracking
@@ -96,13 +98,12 @@ class LBNNEnv(gym.Env):
         pre_action_state = copy.deepcopy(self.last_server_states)
         chosen_server_id = f"server-{action+1}"
 
-        reward = self._calculate_reward(self.last_server_states, chosen_server_id)
-
         payload = {
             "request": self.current_request,
             "forced_action": int(action)
         }
 
+        reward = 0.0
         done = False
         truncated = False
         info = {}
@@ -113,6 +114,8 @@ class LBNNEnv(gym.Env):
 
             current_server_states = data.get("current_server_states", {})
             self.last_server_states = current_server_states
+
+            reward = self._calculate_reward(current_server_states)
 
             if self.current_step >= self.episode_length:
                 done = True
@@ -311,35 +314,12 @@ class LBNNEnv(gym.Env):
     # Reward
     # ------------------------------------------------------------------
 
-    def _calculate_reward(self, server_states, chosen_server_id):
-        """Gradient-based reward: positive when choosing the least-loaded server,
-        negative otherwise. Scaled by 1/100 for NN stability."""
-        if not server_states:
+    def _calculate_reward(self, server_states_after):
+        """Negative peak server load across all servers after placement. Range [-1, 0]."""
+        if not server_states_after:
             return 0.0
-
-        loads = {}
-        parsed_states = {}
-        for sid, state in server_states.items():
-            cpu = state.get("cpu", 0)
-            mem = state.get("memory", 0)
-            loads[sid] = cpu + mem
-            parsed_states[sid] = {"cpu": cpu, "memory": mem}
-
-        min_load = min(loads.values())
-        optimal_servers = [sid for sid, load in loads.items() if load == min_load]
-
-        if len(optimal_servers) == len(loads):
-            return 0.0
-
-        chosen_cpu = parsed_states[chosen_server_id]["cpu"]
-        chosen_mem = parsed_states[chosen_server_id]["memory"]
-
-        if chosen_server_id in optimal_servers:
-            suboptimal = [sid for sid in loads if sid not in optimal_servers]
-            cpu_reward = sum(parsed_states[s]["cpu"] for s in suboptimal) / len(suboptimal) - chosen_cpu
-            mem_reward = sum(parsed_states[s]["memory"] for s in suboptimal) / len(suboptimal) - chosen_mem
-        else:
-            cpu_reward = sum(parsed_states[s]["cpu"] for s in optimal_servers) / len(optimal_servers) - chosen_cpu
-            mem_reward = sum(parsed_states[s]["memory"] for s in optimal_servers) / len(optimal_servers) - chosen_mem
-
-        return (cpu_reward + mem_reward) / 100.0
+        peak = max(
+            max(s.get("cpu", 0) / 100.0, s.get("memory", 0) / 100.0)
+            for s in server_states_after.values()
+        )
+        return -peak

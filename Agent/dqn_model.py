@@ -1,28 +1,31 @@
 
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from config import STATE_DIM, ACTION_DIM, HIDDEN_DIMS
 
 class DQN(nn.Module):
     """
-    Deep Q-Network for LBNN.
-    Input: State vector (STATE_DIM features)
-    Output: Q-values for ACTION_DIM actions (server-1, server-2, server-3)
-    Architecture driven by HIDDEN_DIMS in config.py.
+    Dueling DQN for LBNN.
+    Shared trunk -> value head (1) + advantage head (action_dim) -> Q-values.
     """
     def __init__(self, state_dim=STATE_DIM, action_dim=ACTION_DIM, hidden_dims=HIDDEN_DIMS):
         super(DQN, self).__init__()
+        self.action_dim = action_dim
 
-        layer_sizes = [state_dim] + hidden_dims + [action_dim]
-        layers = []
-        for i in range(len(layer_sizes) - 2):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i + 1]))
-            layers.append(nn.ReLU())
-        layers.append(nn.Linear(layer_sizes[-2], layer_sizes[-1]))  # output, no activation
+        trunk_layers = []
+        in_dim = state_dim
+        for h in hidden_dims:
+            trunk_layers.append(nn.Linear(in_dim, h))
+            trunk_layers.append(nn.ReLU())
+            in_dim = h
+        self.trunk = nn.Sequential(*trunk_layers)
 
-        self.net = nn.Sequential(*layers)
+        self.value_head = nn.Linear(in_dim, 1)
+        self.advantage_head = nn.Linear(in_dim, action_dim)
 
     def forward(self, x):
-        return self.net(x)
+        features = self.trunk(x)
+        V = self.value_head(features)                          # [batch, 1]
+        adv = self.advantage_head(features)                    # [batch, action_dim]
+        Q = V + (adv - adv.mean(dim=1, keepdim=True))         # [batch, action_dim]
+        return Q
