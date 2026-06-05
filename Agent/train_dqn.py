@@ -4,7 +4,6 @@ import json
 import torch
 import numpy as np
 import logging
-import time
 import argparse
 import glob
 import re
@@ -177,14 +176,16 @@ def train(resume=False, log=False, log_file="Models/logs/training_log.jsonl"):
     current_episode_tracker = 0 # Tracks global episode count to match against phases
     metrics_buffer = []
     csv_path = "Models/metrics/training_metrics.csv"
-    
+    consecutive_failures = 0
+    MAX_CONSECUTIVE_FAILURES = 3
+
     for phase_name, num_episodes, episode_len in phases:
         print(f"\n=== Entering {phase_name} (Episodes {current_episode_tracker+1} to {current_episode_tracker+num_episodes}) ===")
         env.episode_length = episode_len
-        
+
         for i in range(num_episodes):
             current_episode_tracker += 1
-            
+
             # Skip episodes that are already done if resuming
             if current_episode_tracker <= start_episode:
                 continue
@@ -199,9 +200,6 @@ def train(resume=False, log=False, log_file="Models/logs/training_log.jsonl"):
                 truncated = False
                 
                 while not (done or truncated):
-                    # Throttling to prevent CPU exhaustion on Windows Docker
-                    time.sleep(0.01) 
-
                     # Select Action
                     action = agent.select_action(state)
                     
@@ -276,11 +274,18 @@ def train(resume=False, log=False, log_file="Models/logs/training_log.jsonl"):
                     agent.save_checkpoint(ckpt_path)
                     print(f"Saved checkpoint to {ckpt_path}")
 
+                consecutive_failures = 0
+
             except Exception as e:
                 logging.error(f"Error in Episode {current_episode_tracker}: {e}", exc_info=True)
-                print(f"Error in Episode {current_episode_tracker}: {e}. Check logs.")
-                # We try to continue to next episode, but sleep a bit to let sockets clear
-                time.sleep(5) 
+                consecutive_failures += 1
+                print(f"Error in Episode {current_episode_tracker}: {e}. "
+                      f"({consecutive_failures}/{MAX_CONSECUTIVE_FAILURES} consecutive failures)")
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    raise RuntimeError(
+                        f"Training aborted: {MAX_CONSECUTIVE_FAILURES} consecutive episode failures. "
+                        f"Last error: {e}"
+                    ) from e
                 
     print("\nTraining Complete!")
     agent.save_checkpoint(os.path.join(config.CHECKPOINT_DIR, "dqn_final.pth"))

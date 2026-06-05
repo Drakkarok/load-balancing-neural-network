@@ -2,7 +2,6 @@
 import os
 import torch
 import numpy as np
-import time
 from dqn_agent import DQNAgent
 from lbnn_env import LBNNEnv
 from metrics import EpisodeMetrics
@@ -50,9 +49,6 @@ def evaluate(model_path="Models/checkpoints/dqn_final.pth", num_episodes=50):
             })
             total_reward += reward
             state = next_state
-            
-            # Tiny sleep to be polite to Docker
-            time.sleep(0.01)
             
         # Compute Metrics
         metrics = EpisodeMetrics()
