@@ -20,7 +20,13 @@ class DQNAgent:
         self.target_net.eval()
         
         # Optimizer
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=config.LEARNING_RATE)
+        self.optimizer = optim.Adam(
+            self.policy_net.parameters(),
+            lr=config.LEARNING_RATE,
+            betas=config.ADAM_BETAS,
+            eps=config.ADAM_EPS,
+            weight_decay=config.ADAM_WEIGHT_DECAY,
+        )
         
         # Replay Buffer
         self.memory = ReplayBuffer(config.REPLAY_BUFFER_SIZE)

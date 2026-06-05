@@ -14,7 +14,7 @@ from metrics import EpisodeMetrics, save_metrics_to_csv
 import config
 
 # Setup Logging
-log_dir = "Models/logs"
+log_dir = config.LOG_DIR
 os.makedirs(log_dir, exist_ok=True)
 logging.basicConfig(
     filename=os.path.join(log_dir, "training_errors.log"),
@@ -175,9 +175,8 @@ def train(resume=False, log=False, log_file="Models/logs/training_log.jsonl"):
     
     current_episode_tracker = 0 # Tracks global episode count to match against phases
     metrics_buffer = []
-    csv_path = "Models/metrics/training_metrics.csv"
+    csv_path = config.METRICS_CSV_PATH
     consecutive_failures = 0
-    MAX_CONSECUTIVE_FAILURES = 3
 
     for phase_name, num_episodes, episode_len in phases:
         print(f"\n=== Entering {phase_name} (Episodes {current_episode_tracker+1} to {current_episode_tracker+num_episodes}) ===")
@@ -281,9 +280,9 @@ def train(resume=False, log=False, log_file="Models/logs/training_log.jsonl"):
                 consecutive_failures += 1
                 print(f"Error in Episode {current_episode_tracker}: {e}. "
                       f"({consecutive_failures}/{MAX_CONSECUTIVE_FAILURES} consecutive failures)")
-                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                if consecutive_failures >= config.MAX_CONSECUTIVE_FAILURES:
                     raise RuntimeError(
-                        f"Training aborted: {MAX_CONSECUTIVE_FAILURES} consecutive episode failures. "
+                        f"Training aborted: {config.MAX_CONSECUTIVE_FAILURES} consecutive episode failures. "
                         f"Last error: {e}"
                     ) from e
                 

@@ -1,32 +1,39 @@
 
 # Hyperparameters and Constants
 
-# Network
+# --- Network ---
 STATE_DIM = 66
 ACTION_DIM = 3
 HIDDEN_DIMS = [128, 128, 64]
 
-# Training
-BATCH_SIZE = 32
+# --- Optimizer (Adam) ---
 LEARNING_RATE = 0.001
+ADAM_BETAS = (0.9, 0.999)
+ADAM_EPS = 1e-8
+ADAM_WEIGHT_DECAY = 0.0
+
+# --- Training ---
+BATCH_SIZE = 32
 GAMMA = 0.99
 TAU = 0.005
 GRAD_CLIP_VALUE = 1.0
 
-# Experience Replay
+# --- Experience Replay ---
 REPLAY_BUFFER_SIZE = 10000
 MIN_REPLAY_SIZE = 1000
 
-# Exploration
+# --- Exploration ---
 EPSILON_START = 1.0
 EPSILON_DECAY = 0.995
 EPSILON_MIN = 0.01
 
-# EMA warmup: steps run at episode start before transitions enter the replay buffer.
-# After 40 steps the initial seed's influence on EMA is < 2% (alpha=0.095, N=20).
-EMA_WARMUP_STEPS = 40
+# --- Environment ---
+MAX_DURATION = 21.0       # max request duration in ticks (heavy range top)
+MAX_CONNECTIONS = 21.0    # max concurrent connections (normalization cap)
+EMA_N = 20                # EMA window length; alpha = 2 / (N + 1) ≈ 0.095
+EMA_WARMUP_STEPS = 40     # steps at episode start to warm up EMA before recording transitions
 
-# Curriculum (Episodes)
+# --- Curriculum (Episodes) ---
 PHASE_1_EPISODES = 1000
 PHASE_1_LENGTH = 150
 PHASE_2_EPISODES = 2000
@@ -34,11 +41,16 @@ PHASE_2_LENGTH = 250
 PHASE_3_EPISODES = 3000
 PHASE_3_LENGTH = 500
 
-# Checkpointing
+# --- Checkpointing ---
 CHECKPOINT_FREQ = 100
 CHECKPOINT_DIR = "Models/checkpoints"
 
-# System Constants
+# --- Logging & Metrics ---
+LOG_DIR = "Models/logs"
+METRICS_CSV_PATH = "Models/metrics/training_metrics.csv"
+MAX_CONSECUTIVE_FAILURES = 3
+
+# --- System ---
 AGENT_URL = "http://localhost:8080"
 SERVER_CAPACITIES = {
     "server-1": {"cpu": 1500, "memory": 2000},

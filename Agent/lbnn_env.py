@@ -6,10 +6,7 @@ import requests
 import random
 import copy
 
-from config import SERVER_CAPACITIES, EMA_WARMUP_STEPS
-
-# Use localhost for training since the training script runs on the host
-AGENT_URL = "http://localhost:8080"
+from config import AGENT_URL, SERVER_CAPACITIES, EMA_WARMUP_STEPS, MAX_DURATION, MAX_CONNECTIONS, EMA_N
 
 _EMPTY_BRACKETS = {
     "cpu":   {"low": 0.0, "mid": 0.0, "high": 0.0},
@@ -55,11 +52,10 @@ class LBNNEnv(gym.Env):
         # stay in sync if server capacities ever change.
         self.MAX_CPU      = max(cap["cpu"]    for cap in SERVER_CAPACITIES.values())
         self.MAX_MEM      = max(cap["memory"] for cap in SERVER_CAPACITIES.values())
-        self.MAX_DURATION = 21.0    # max ticks (heavy range top)
-        self.MAX_CONNECTIONS = 21.0  # max possible concurrent requests (heavy duration cap)
+        self.MAX_DURATION = MAX_DURATION
+        self.MAX_CONNECTIONS = MAX_CONNECTIONS
 
-        # EMA config: N=20 → alpha ≈ 0.095, covers ~1 full heavy request lifecycle
-        self.EMA_ALPHA = 2.0 / (20 + 1)
+        self.EMA_ALPHA = 2.0 / (EMA_N + 1)
         self._ema = None  # initialized on first _construct_state call per episode
 
         # Use a session for persistent connections to Agent
