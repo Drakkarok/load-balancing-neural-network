@@ -114,8 +114,8 @@ class LBNNEnv(gym.Env):
             reward = self._calculate_reward(current_server_states)
 
             if self.current_step >= self.episode_length:
-                done = True
-                next_request = self._generate_request()  # dummy for shape
+                truncated = True
+                next_request = self._generate_request()
                 self.current_request = None
             else:
                 next_request = self._generate_request()
