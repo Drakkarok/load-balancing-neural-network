@@ -318,4 +318,4 @@ class LBNNEnv(gym.Env):
             max(s.get("cpu", 0) / 100.0, s.get("memory", 0) / 100.0)
             for s in server_states_after.values()
         )
-        return -peak
+        return -(peak ** 2)
