@@ -293,8 +293,10 @@ WARMUP_END = 150   # last warmup tick; measured starts at tick 151
 
 def plot_peak_timeseries(results_dir, out_dir, trace_id=1, window=30):
     fig, ax = plt.subplots(figsize=(14, 4))
-    # Greedy first, DQN last (on top).
-    for method in ("greedy_min_peak", "dqn"):
+    # DQN first (behind), Greedy second (on top). Greedy linewidth = 1/3 of DQN.
+    greedy_lw = LINEWIDTHS["dqn"] / 3
+    for method in ("dqn", "greedy_min_peak"):
+        lw = LINEWIDTHS["dqn"] if method == "dqn" else greedy_lw
         # Load all ticks (warmup + measured).
         ticks, peaks = load_one_trace_peaks(method, results_dir, trace_id, phase=None)
         if len(peaks) == 0:
@@ -302,7 +304,7 @@ def plot_peak_timeseries(results_dir, out_dir, trace_id=1, window=30):
         ax.plot(ticks, peaks, color=COLORS[method], alpha=0.15, linewidth=0.7)
         if len(peaks) >= window:
             ax.plot(ticks[window - 1:], smooth(peaks, window),
-                    color=COLORS[method], linewidth=LINEWIDTHS[method],
+                    color=COLORS[method], linewidth=lw,
                     label=f"{METHOD_LABELS[method]}  (smoothed {window}-tick)")
     ax.axvline(WARMUP_END, color="black", linestyle=":", linewidth=1.5, alpha=0.6,
                label="Warmup end")
@@ -312,7 +314,7 @@ def plot_peak_timeseries(results_dir, out_dir, trace_id=1, window=30):
     ax.set_ylim(0, 1.05)
     ax.legend()
     ax.grid(True, alpha=0.3)
-    savefig(fig, os.path.join(out_dir, "ch6", "peak_timeseries.png"))
+    savefig(fig, os.path.join(out_dir, "ch6", "peak", "peak_timeseries.png"))
 
 
 def plot_peak_cdf(results_dir, out_dir):
@@ -340,7 +342,7 @@ def plot_peak_cdf(results_dir, out_dir):
     ax.set_ylim(0, 1.02)
     ax.legend(loc="upper left", fontsize=9)
     ax.grid(True, alpha=0.3)
-    savefig(fig, os.path.join(out_dir, "ch6", "peak_cdf.png"))
+    savefig(fig, os.path.join(out_dir, "ch6", "peak", "peak_cdf.png"))
 
 
 def plot_action_distribution(results_dir, out_dir):
@@ -366,7 +368,7 @@ def plot_action_distribution(results_dir, out_dir):
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14),
               ncol=4, fontsize=9, framealpha=0.9)
     fig.subplots_adjust(bottom=0.22)
-    savefig(fig, os.path.join(out_dir, "ch6", "action_distribution.png"))
+    savefig(fig, os.path.join(out_dir, "ch6", "peak", "action_distribution.png"))
 
 
 def plot_peak_boxplots(results_dir, out_dir):
@@ -389,7 +391,7 @@ def plot_peak_boxplots(results_dir, out_dir):
     ax.set_ylabel("Per-Tick Peak Load")
     ax.set_title("Distribution of Peak Load per Method  (all traces)")
     ax.grid(True, alpha=0.3, axis="y")
-    savefig(fig, os.path.join(out_dir, "ch6", "peak_boxplots.png"))
+    savefig(fig, os.path.join(out_dir, "ch6", "peak", "peak_boxplots.png"))
 
 
 SMOOTH_W = 25  # smoothing window for server utilization plots
@@ -404,10 +406,12 @@ def _plot_server_metric(results_dir, out_dir, metric, trace_id,
     """
     fig, axes = plt.subplots(3, 1, figsize=(14, 8), sharex=True)
 
+    greedy_lw = LINEWIDTHS["dqn"] / 3
     for ax, srv in zip(axes, SERVERS):
         col = f"{srv}_{metric}"
-        # Greedy first, DQN second so it renders on top.
-        for method in ("greedy_min_peak", "dqn"):
+        # DQN first (behind), Greedy second (on top). Greedy linewidth = 1/3 of DQN.
+        for method in ("dqn", "greedy_min_peak"):
+            lw = LINEWIDTHS["dqn"] if method == "dqn" else greedy_lw
             ticks, cols = load_one_trace_server_util(method, results_dir, trace_id, phase=None)
             if len(ticks) == 0:
                 continue
@@ -430,7 +434,7 @@ def _plot_server_metric(results_dir, out_dir, metric, trace_id,
                 sm = smooth(v, SMOOTH_W)
                 ax.plot(t[SMOOTH_W - 1:], sm,
                         color=COLORS[method],
-                        linewidth=LINEWIDTHS[method],
+                        linewidth=lw,
                         alpha=1.0 if method == "dqn" else 0.75,
                         label=METHOD_LABELS[method])
 
@@ -464,12 +468,12 @@ def _plot_server_metric(results_dir, out_dir, metric, trace_id,
     fig.legend(handles, lbls, loc="upper right", fontsize=10)
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     suffix = f"_{part_label}" if part_label else ""
-    savefig(fig, os.path.join(out_dir, "ch6", f"server_{metric}_utilization{suffix}.png"))
+    savefig(fig, os.path.join(out_dir, "ch6", "server", f"server_{metric}_utilization{suffix}.png"))
 
 
 def plot_server_utilization(results_dir, out_dir, trace_id=1):
     # Remove the old combined file that showed CPU+MEM on the same axes.
-    old = os.path.join(out_dir, "ch6", "server_utilization.png")
+    old = os.path.join(out_dir, "ch6", "server", "server_utilization.png")
     if os.path.exists(old):
         os.remove(old)
         print(f"  Removed stale: {old}")
@@ -508,51 +512,72 @@ def plot_dqn_vs_greedy_scatter(results_dir, out_dir):
     ax.set_ylim(0, 1)
     ax.legend(markerscale=6, fontsize=9)
     ax.grid(True, alpha=0.3)
-    savefig(fig, os.path.join(out_dir, "ch6", "dqn_vs_greedy_scatter.png"))
+    savefig(fig, os.path.join(out_dir, "ch6", "peak", "dqn_vs_greedy_scatter.png"))
 
 
-def plot_per_trace_diffs(results_dir, out_dir):
+def plot_per_metric_comparison(results_dir, out_dir):
+    """One figure per metric: DQN vs Greedy line chart across all traces."""
     trace_ids = sorted(
         int(os.path.basename(f).replace("trace_", "").replace(".csv", ""))
         for f in glob.glob(os.path.join(results_dir, "dqn", "trace_*.csv"))
     )
     if not trace_ids:
-        print("  Skipping per-trace diffs — no DQN trace files found.")
+        print("  Skipping per-metric comparison — no DQN trace files found.")
         return
 
-    metric_specs = [
-        ("mean_peak",    "Mean Peak Load"),
-        ("p95_peak",     "P95 Peak Load"),
-        ("frac_over_90", "Frac Ticks > 90%"),
-    ]
-
-    dqn_vals    = {k: [] for k, _ in metric_specs}
-    greedy_vals = {k: [] for k, _ in metric_specs}
-
+    # Pre-load all metrics for both methods.
+    dqn_vals    = {k: [] for k in _ALL_METRICS}
+    greedy_vals = {k: [] for k in _ALL_METRICS}
     for tid in trace_ids:
-        dqn_m    = compute_all_trace_metrics("dqn",            results_dir, tid)
-        greedy_m = compute_all_trace_metrics("greedy_min_peak", results_dir, tid)
-        for k, _ in metric_specs:
-            dqn_vals[k].append(dqn_m[k]    if dqn_m    else float("nan"))
-            greedy_vals[k].append(greedy_m[k] if greedy_m else float("nan"))
+        dm = compute_all_trace_metrics("dqn",            results_dir, tid)
+        gm = compute_all_trace_metrics("greedy_min_peak", results_dir, tid)
+        for k in _ALL_METRICS:
+            dqn_vals[k].append(dm[k]    if dm else float("nan"))
+            greedy_vals[k].append(gm[k] if gm else float("nan"))
 
-    x     = np.arange(len(trace_ids))
-    width = 0.35
-    fig, axes = plt.subplots(1, 3, figsize=(14, 4))
-    for ax, (key, label) in zip(axes, metric_specs):
-        ax.bar(x - width / 2, dqn_vals[key],    width,
-               label="DQN",    color=COLORS["dqn"],            alpha=0.85, zorder=3)
-        ax.bar(x + width / 2, greedy_vals[key], width,
-               label="Greedy", color=COLORS["greedy_min_peak"], alpha=0.85, zorder=2)
-        ax.set_xticks(x)
-        ax.set_xticklabels([f"Trace {t}" for t in trace_ids])
-        ax.set_title(label)
-        ax.grid(True, alpha=0.3, axis="y")
-        if ax is axes[0]:
-            ax.legend(loc="lower left", fontsize=9)
-    fig.suptitle("Per-Trace: DQN vs Greedy Min-Peak", fontsize=12)
-    fig.tight_layout()
-    savefig(fig, os.path.join(out_dir, "ch6", "per_trace_diffs.png"))
+    x = np.arange(len(trace_ids))
+
+    for key in _ALL_METRICS:
+        dv = np.array(dqn_vals[key])
+        gv = np.array(greedy_vals[key])
+
+        fig, ax = plt.subplots(figsize=(max(10, len(trace_ids) * 0.12), 4))
+
+        ax.plot(x, gv, color=COLORS["greedy_min_peak"], linewidth=1.2,
+                alpha=0.8, label=METHOD_LABELS["greedy_min_peak"], zorder=2)
+        ax.plot(x, dv, color=COLORS["dqn"], linewidth=1.8,
+                alpha=1.0, label=METHOD_LABELS["dqn"], zorder=3)
+
+        # Shade regions: green where DQN wins, red where greedy wins.
+        dqn_better = dv < gv
+        ax.fill_between(x, dv, gv, where=dqn_better,
+                        alpha=0.15, color=COLORS["dqn"],            label="DQN better")
+        ax.fill_between(x, dv, gv, where=~dqn_better,
+                        alpha=0.15, color=COLORS["greedy_min_peak"], label="Greedy better")
+
+        # Mean lines.
+        ax.axhline(np.nanmean(dv), color=COLORS["dqn"],            linestyle="--",
+                   linewidth=1.0, alpha=0.7)
+        ax.axhline(np.nanmean(gv), color=COLORS["greedy_min_peak"], linestyle="--",
+                   linewidth=1.0, alpha=0.7)
+
+        ax.set_xticks(x[::max(1, len(trace_ids) // 20)])
+        ax.set_xticklabels([str(trace_ids[i]) for i in range(0, len(trace_ids),
+                             max(1, len(trace_ids) // 20))], fontsize=8)
+        ax.set_xlabel("Trace ID")
+        ax.set_ylabel(_METRIC_LABELS[key])
+        n_dqn_wins = int(np.sum(dqn_better))
+        ax.set_title(
+            f"{_METRIC_LABELS[key]}  —  DQN vs Greedy Min-Peak  "
+            f"(DQN wins {n_dqn_wins}/{len(trace_ids)} traces)",
+            fontsize=11,
+        )
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18),
+                  ncol=4, fontsize=9, framealpha=0.9)
+        ax.grid(True, alpha=0.25)
+
+        fig.tight_layout(rect=[0, 0.12, 1, 1])
+        savefig(fig, os.path.join(out_dir, "ch6", "per_metric", f"per_metric_{key}.png"))
 
 
 # Shared config for the two paired-diff figures.
@@ -630,18 +655,73 @@ def plot_volatility_comparison(results_dir, out_dir):
         ax.grid(True, alpha=0.3, axis="y")
 
     fig.suptitle(
-        "Temporal Volatility Metrics — All Methods  (mean ± std across 5 traces)\n"
+        f"Temporal Volatility Metrics — All Methods  (mean ± std across {len(trace_ids)} traces)\n"
         "lower = smoother utilisation",
         fontsize=11,
     )
     fig.tight_layout()
-    savefig(fig, os.path.join(out_dir, "ch6", "volatility_comparison.png"))
+    savefig(fig, os.path.join(out_dir, "ch6", "summary", "volatility_comparison.png"))
+
+
+def plot_summary_heatmap(summary_dir, out_dir):
+    """Compact 2×9 heatmap of mean diffs from paired_diffs.csv — dissertation-friendly."""
+    path = os.path.join(summary_dir, "paired_diffs.csv")
+    if not os.path.exists(path):
+        print("  Skipping summary heatmap — paired_diffs.csv not found.")
+        return
+
+    data = {}
+    with open(path) as f:
+        for row in csv.DictReader(f):
+            data[(row["comparison"], row["metric"])] = float(row["mean_diff"])
+
+    comparisons = [k for k, _ in _BASELINES]
+    comp_labels  = [v for _, v in _BASELINES]
+    matrix = np.array([
+        [data.get((f"dqn_vs_{comp}", m), float("nan")) for m in _ALL_METRICS]
+        for comp in comparisons
+    ])
+
+    # Symmetric colour scale centred on 0.
+    finite = np.abs(matrix[~np.isnan(matrix)])
+    vmax   = float(finite.max()) if len(finite) > 0 else 0.05
+    vmax   = vmax if vmax > 1e-6 else 0.05
+
+    fig, ax = plt.subplots(figsize=(12, 2.8))
+    im = ax.imshow(matrix, cmap="RdYlGn_r", aspect="auto",
+                   vmin=-vmax, vmax=vmax)
+
+    ax.set_xticks(range(len(_ALL_METRICS)))
+    ax.set_xticklabels([_METRIC_LABELS[m] for m in _ALL_METRICS],
+                       rotation=30, ha="right", fontsize=9)
+    ax.set_yticks(range(len(comparisons)))
+    ax.set_yticklabels(comp_labels, fontsize=10)
+
+    for i in range(len(comparisons)):
+        for j, m in enumerate(sorted(_ALL_METRICS, key=_ALL_METRICS.index)):
+            v = matrix[i, j]
+            if not np.isnan(v):
+                sign  = "▼" if v < 0 else "▲"
+                color = "black"
+                ax.text(j, i, f"{sign} {abs(v):.4f}", ha="center", va="center",
+                        fontsize=7.5, color=color)
+
+    cbar = fig.colorbar(im, ax=ax, orientation="vertical", pad=0.02, fraction=0.03)
+    cbar.set_label("Mean diff  (DQN − baseline)\nnegative = DQN wins", fontsize=8)
+
+    ax.set_title(
+        "Summary: DQN vs Baselines — mean metric difference across all traces\n"
+        "Green = DQN wins  |  Red = baseline wins  |  ▼ / ▲ = direction",
+        fontsize=10,
+    )
+    fig.tight_layout()
+    savefig(fig, os.path.join(out_dir, "ch6", "summary", "summary_heatmap.png"))
 
 
 def plot_paired_diffs_diverging(summary_dir, out_dir):
     """
     Horizontal diverging bar chart.
-    Each bar = mean(DQN - baseline) across 5 traces, error bar = std.
+    Each bar = mean(DQN - baseline) across all traces, error bar = std.
     Negative (left) = DQN better. Annotated with win count.
     """
     from matplotlib.patches import Patch
@@ -697,47 +777,29 @@ def plot_paired_diffs_diverging(summary_dir, out_dir):
     ]
     fig.legend(handles=legend_handles, loc="lower center", ncol=2, fontsize=9,
                bbox_to_anchor=(0.5, -0.04))
+    # n_traces comes from the CSV — use it directly.
+    n_traces_label = next(
+        (r["n_traces"] for r in rows.values() if r["n_traces"] > 0), "?"
+    )
     fig.suptitle(
-        "Paired Differences: DQN vs Baselines  (mean ± std across 5 traces)\n"
+        f"Paired Differences: DQN vs Baselines  (mean ± std across {n_traces_label} traces)\n"
         "win count = traces where DQN wins that metric",
         fontsize=11,
     )
     fig.tight_layout(rect=[0, 0.06, 1, 1])
-    savefig(fig, os.path.join(out_dir, "ch6", "paired_diffs_diverging.png"))
+    savefig(fig, os.path.join(out_dir, "ch6", "summary", "paired_diffs_diverging.png"))
 
 
-def plot_per_trace_win_heatmap(results_dir, out_dir):
-    """
-    Heatmap: rows = metrics, columns = traces.
-    Cell colour = green if DQN wins (diff < 0), red if baseline wins.
-    Cell text = actual per-trace diff value.
-    One panel per baseline comparison.
-    """
-    trace_ids = sorted(
-        int(os.path.basename(f).replace("trace_", "").replace(".csv", ""))
-        for f in glob.glob(os.path.join(results_dir, "dqn", "trace_*.csv"))
-    )
-    if not trace_ids:
-        print("  Skipping win heatmap — no DQN trace files found.")
-        return
-
+def _render_win_heatmap(matrices, trace_ids, out_path, chunk_label=""):
+    """Render a win/loss heatmap for a subset of traces and save to out_path."""
     n_metrics = len(_ALL_METRICS)
     n_traces  = len(trace_ids)
-    fig, axes = plt.subplots(2, 1, figsize=(max(8, n_traces * 1.6), 9))
+    fig, axes = plt.subplots(2, 1, figsize=(max(8, n_traces * 1.5), 9))
 
     for ax, (baseline, title) in zip(axes, _BASELINES):
-        matrix = np.full((n_metrics, n_traces), np.nan)
-
-        for j, tid in enumerate(trace_ids):
-            dqn_m  = compute_all_trace_metrics("dqn",     results_dir, tid)
-            base_m = compute_all_trace_metrics(baseline,   results_dir, tid)
-            if dqn_m is None or base_m is None:
-                continue
-            for i, metric in enumerate(_ALL_METRICS):
-                matrix[i, j] = dqn_m[metric] - base_m[metric]
-
-        vmax = float(np.nanmax(np.abs(matrix))) or 1.0
-        # RdYlGn_r: low (negative, DQN wins) → green; high (positive, baseline wins) → red
+        matrix = matrices[baseline]
+        vmax = float(np.nanmax(np.abs(matrix))) if not np.all(np.isnan(matrix)) else 1.0
+        vmax = vmax or 1.0
         im = ax.imshow(matrix, cmap="RdYlGn_r", vmin=-vmax, vmax=vmax, aspect="auto")
 
         for i in range(n_metrics):
@@ -747,22 +809,74 @@ def plot_per_trace_win_heatmap(results_dir, out_dir):
                     continue
                 txt_color = "white" if abs(val) > vmax * 0.55 else "black"
                 ax.text(j, i, f"{val:+.4f}", ha="center", va="center",
-                        fontsize=8, color=txt_color, fontweight="bold")
+                        fontsize=max(5, min(8, 60 // n_traces)),
+                        color=txt_color, fontweight="bold")
 
         ax.set_xticks(range(n_traces))
-        ax.set_xticklabels([f"Trace {t}" for t in trace_ids], fontsize=9)
+        ax.set_xticklabels([f"T{t}" for t in trace_ids], fontsize=max(6, min(9, 60 // n_traces)))
         ax.set_yticks(range(n_metrics))
         ax.set_yticklabels([_METRIC_LABELS[m] for m in _ALL_METRICS], fontsize=9)
         ax.set_title(title, fontweight="bold", fontsize=11)
         plt.colorbar(im, ax=ax, label="DQN − baseline  (green = DQN wins)", shrink=0.85)
 
+    suffix = f"  —  traces {chunk_label}" if chunk_label else ""
     fig.suptitle(
-        "Per-Trace Win/Loss: DQN vs Baselines\n"
+        f"Per-Trace Win/Loss: DQN vs Baselines{suffix}\n"
         "green = DQN better · red = baseline better · value = exact difference",
         fontsize=11,
     )
     fig.tight_layout()
-    savefig(fig, os.path.join(out_dir, "ch6", "per_trace_win_heatmap.png"))
+    savefig(fig, out_path)
+
+
+def plot_per_trace_win_heatmap(results_dir, out_dir):
+    """Full heatmap (all traces) + 20 chunked heatmaps of 5 traces each."""
+    trace_ids = sorted(
+        int(os.path.basename(f).replace("trace_", "").replace(".csv", ""))
+        for f in glob.glob(os.path.join(results_dir, "dqn", "trace_*.csv"))
+    )
+    if not trace_ids:
+        print("  Skipping win heatmap — no DQN trace files found.")
+        return
+
+    # Pre-compute all metrics once to avoid re-reading CSVs for every chunk.
+    all_dqn  = {}
+    all_base = {b: {} for b, _ in _BASELINES}
+    for tid in trace_ids:
+        all_dqn[tid] = compute_all_trace_metrics("dqn", results_dir, tid)
+        for baseline, _ in _BASELINES:
+            all_base[baseline][tid] = compute_all_trace_metrics(baseline, results_dir, tid)
+
+    def _build_matrices(tids):
+        mats = {}
+        for baseline, _ in _BASELINES:
+            m = np.full((len(_ALL_METRICS), len(tids)), np.nan)
+            for j, tid in enumerate(tids):
+                dm = all_dqn.get(tid)
+                bm = all_base[baseline].get(tid)
+                if dm is None or bm is None:
+                    continue
+                for i, metric in enumerate(_ALL_METRICS):
+                    m[i, j] = dm[metric] - bm[metric]
+            mats[baseline] = m
+        return mats
+
+    hmap_dir   = os.path.join(out_dir, "ch6", "heatmaps")
+    chunks_dir = os.path.join(hmap_dir, "chunks")
+
+    # Full heatmap.
+    _render_win_heatmap(_build_matrices(trace_ids), trace_ids,
+                        os.path.join(hmap_dir, "per_trace_win_heatmap.png"))
+
+    # Chunked heatmaps — 5 traces per figure.
+    chunk_size = 5
+    for start in range(0, len(trace_ids), chunk_size):
+        chunk = trace_ids[start:start + chunk_size]
+        label = f"{chunk[0]}–{chunk[-1]}"
+        fname = f"heatmap_{chunk[0]}_{chunk[-1]}.png"
+        _render_win_heatmap(_build_matrices(chunk), chunk,
+                            os.path.join(chunks_dir, fname),
+                            chunk_label=label)
 
 
 # ---------------------------------------------------------------------------
@@ -794,12 +908,21 @@ def main():
     plot_peak_boxplots(args.results_dir, args.out_dir)
     plot_server_utilization(args.results_dir, args.out_dir, trace_id=args.trace)
     plot_dqn_vs_greedy_scatter(args.results_dir, args.out_dir)
-    plot_per_trace_diffs(args.results_dir, args.out_dir)
-    plot_paired_diffs_diverging(os.path.join(args.results_dir, "..", "summary"), args.out_dir)
+    plot_per_metric_comparison(args.results_dir, args.out_dir)
+    summary_dir = os.path.join(args.results_dir, "..", "summary")
+    plot_summary_heatmap(summary_dir, args.out_dir)
+    plot_paired_diffs_diverging(summary_dir, args.out_dir)
     plot_per_trace_win_heatmap(args.results_dir, args.out_dir)
     plot_volatility_comparison(args.results_dir, args.out_dir)
 
-    print(f"\nDone. All figures saved under: {args.out_dir}/")
+    print(f"\nDone. Folder layout:")
+    print(f"  {args.out_dir}/ch4/               training curves")
+    print(f"  {args.out_dir}/ch6/peak/           peak timeseries, CDF, boxplots, scatter, actions")
+    print(f"  {args.out_dir}/ch6/server/         per-server CPU & MEM utilisation")
+    print(f"  {args.out_dir}/ch6/per_metric/     DQN vs Greedy per metric (9 figures)")
+    print(f"  {args.out_dir}/ch6/summary/        summary heatmap, diverging bars, volatility")
+    print(f"  {args.out_dir}/ch6/heatmaps/       full win/loss heatmap")
+    print(f"  {args.out_dir}/ch6/heatmaps/chunks/  20 × 5-trace heatmaps")
 
 
 if __name__ == "__main__":

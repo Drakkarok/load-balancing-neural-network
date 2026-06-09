@@ -275,7 +275,9 @@ def policy_least_load(states, req, tick, rng):
 
 
 def policy_greedy_min_peak(states, req, tick, rng):
-    best_action, best_peak = 0, float("inf")
+    best_action = 0
+    best_peak   = float("inf")
+    best_util   = float("inf")   # tie-breaker: lowest current utilisation = most headroom
     for i, sid in enumerate(SERVER_IDS):
         cap = config.SERVER_CAPACITIES[sid]
         cpu_after = min(100.0, states[sid]["cpu"]    + req["cpu_cost"]    / cap["cpu"]    * 100)
@@ -286,8 +288,9 @@ def policy_greedy_min_peak(states, req, tick, rng):
                 peak = max(peak, max(cpu_after, mem_after) / 100.0)
             else:
                 peak = max(peak, _util(states[sid2]))
-        if peak < best_peak:
-            best_peak, best_action = peak, i
+        cur_util = _util(states[sid])
+        if peak < best_peak or (peak == best_peak and cur_util < best_util):
+            best_peak, best_util, best_action = peak, cur_util, i
     return best_action
 
 
@@ -549,10 +552,17 @@ def compute_metrics(csv_path):
 # Summary statistics + paired diffs
 # ---------------------------------------------------------------------------
 
-def compute_summary(output_dir, n_traces):
+def compute_summary(output_dir, n_traces=None, trace_ids=None):
+    # Accept either an explicit list of IDs or auto-detect from results/dqn/.
+    if trace_ids is None:
+        if n_traces is not None:
+            trace_ids = list(range(1, n_traces + 1))
+        else:
+            results_dqn = os.path.join(output_dir, "results", "dqn")
+            trace_ids = _detect_trace_ids(results_dqn, ext=".csv")
     all_metrics = {m: [] for m in ALL_METHODS}
     for method in ALL_METHODS:
-        for t in range(1, n_traces + 1):
+        for t in trace_ids:
             path = os.path.join(output_dir, "results", method, f"trace_{t}.csv")
             if os.path.exists(path):
                 all_metrics[method].append(compute_metrics(path))
@@ -695,6 +705,19 @@ def plot_trace(output_dir, trace_id=1):
 # Commands
 # ---------------------------------------------------------------------------
 
+def _detect_trace_ids(traces_dir, ext=".json"):
+    """Return sorted list of trace IDs found as trace_N<ext> in traces_dir."""
+    if not os.path.isdir(traces_dir):
+        return []
+    ids = []
+    for name in os.listdir(traces_dir):
+        if name.startswith("trace_") and name.endswith(ext):
+            stem = name[len("trace_"):-len(ext)]
+            if stem.isdigit():
+                ids.append(int(stem))
+    return sorted(ids)
+
+
 def cmd_generate_traces(args):
     traces_dir = os.path.join(args.output_dir, "traces")
     os.makedirs(traces_dir, exist_ok=True)
@@ -712,23 +735,36 @@ def cmd_generate_traces(args):
 def cmd_run(args):
     traces_dir = os.path.join(args.output_dir, "traces")
 
-    # Guard: all requested trace files must exist
-    missing = [
-        os.path.join(traces_dir, f"trace_{i}.json")
-        for i in range(1, args.traces + 1)
-        if not os.path.exists(os.path.join(traces_dir, f"trace_{i}.json"))
-    ]
-    if missing:
-        print("ERROR: Trace files not found. Generate them first with:")
-        print(f"  python evaluate.py generate-traces --traces {args.traces} --output-dir {args.output_dir}")
-        print("\nMissing files:")
-        for p in missing:
-            print(f"  {p}")
-        sys.exit(1)
+    # Auto-detect traces when --traces is not explicitly set.
+    if args.traces is None:
+        trace_ids = _detect_trace_ids(traces_dir)
+        if not trace_ids:
+            print("ERROR: No trace files found in", traces_dir)
+            print("  Generate them first with:")
+            print(f"  python evaluate.py generate-traces --output-dir {args.output_dir}")
+            sys.exit(1)
+        print(f"Auto-detected {len(trace_ids)} trace(s): {trace_ids}")
+    else:
+        trace_ids = list(range(1, args.traces + 1))
+        # Guard: all requested trace files must exist
+        missing = [
+            os.path.join(traces_dir, f"trace_{i}.json")
+            for i in trace_ids
+            if not os.path.exists(os.path.join(traces_dir, f"trace_{i}.json"))
+        ]
+        if missing:
+            print("ERROR: Trace files not found. Generate them first with:")
+            print(f"  python evaluate.py generate-traces --traces {args.traces} --output-dir {args.output_dir}")
+            print("\nMissing files:")
+            for p in missing:
+                print(f"  {p}")
+            sys.exit(1)
+
+    n_traces = len(trace_ids)
 
     # Load traces
     traces = []
-    for i in range(1, args.traces + 1):
+    for i in trace_ids:
         path = os.path.join(traces_dir, f"trace_{i}.json")
         print(f"Loading trace {i} from {path}")
         traces.append(load_trace(path))
@@ -736,18 +772,18 @@ def cmd_run(args):
     # Run baselines
     for method_name, policy_fn in POLICY_FNS.items():
         print(f"\nRunning {method_name}...")
-        for i, trace in enumerate(traces, 1):
-            print(f"  trace {i}/{args.traces}...", end=" ", flush=True)
-            run_baseline(method_name, policy_fn, i, trace, args.output_dir)
+        for idx, (tid, trace) in enumerate(zip(trace_ids, traces), 1):
+            print(f"  trace {tid} ({idx}/{n_traces})...", end=" ", flush=True)
+            run_baseline(method_name, policy_fn, tid, trace, args.output_dir)
             print("done")
 
     # Run DQN
     if not args.skip_dqn:
         if os.path.exists(args.model):
             print(f"\nRunning dqn ({args.model})...")
-            for i, trace in enumerate(traces, 1):
-                print(f"  trace {i}/{args.traces}...", end=" ", flush=True)
-                run_dqn(args.model, i, trace, args.output_dir)
+            for idx, (tid, trace) in enumerate(zip(trace_ids, traces), 1):
+                print(f"  trace {tid} ({idx}/{n_traces})...", end=" ", flush=True)
+                run_dqn(args.model, tid, trace, args.output_dir)
                 print("done")
         else:
             print(f"\nSkipping DQN — checkpoint not found: {args.model}")
@@ -755,7 +791,7 @@ def cmd_run(args):
 
     # Summary + built-in quick plot
     print("\nComputing summary statistics...")
-    compute_summary(args.output_dir, n_traces=args.traces)
+    compute_summary(args.output_dir, n_traces=n_traces, trace_ids=trace_ids)
     plot_trace(args.output_dir, trace_id=args.plot_trace)
 
     # Full figure generation via plot_results.py
@@ -801,17 +837,17 @@ if __name__ == "__main__":
         help="Run evaluation. Errors if trace files are missing.",
     )
     run.add_argument("--model",      default="Models/checkpoints/dqn_final.pth")
-    run.add_argument("--traces",     type=int, default=5,  help="Number of traces to use")
-    run.add_argument("--output-dir", default="eval",       help="Root output directory")
-    run.add_argument("--skip-dqn",   action="store_true",  help="Run baselines only")
-    run.add_argument("--plot-trace", type=int, default=1,  help="Which trace to plot (1-indexed)")
+    run.add_argument("--traces",     type=int, default=None, help="Number of traces to use (default: auto-detect from traces/ dir)")
+    run.add_argument("--output-dir", default="eval",        help="Root output directory")
+    run.add_argument("--skip-dqn",   action="store_true",   help="Run baselines only")
+    run.add_argument("--plot-trace", type=int, default=1,   help="Which trace to plot (1-indexed)")
 
     # --- summarize ---
     summ = subparsers.add_parser(
         "summarize",
         help="Recompute summary statistics from existing result CSVs (no re-simulation).",
     )
-    summ.add_argument("--traces",     type=int, default=5,  help="Number of traces")
+    summ.add_argument("--traces",     type=int, default=None, help="Number of traces (default: auto-detect from results/)")
     summ.add_argument("--output-dir", default="eval",       help="Root output directory")
 
     args = parser.parse_args()
@@ -822,7 +858,7 @@ if __name__ == "__main__":
         cmd_run(args)
     elif args.command == "summarize":
         print("Recomputing summary from existing result CSVs...")
-        compute_summary(args.output_dir, n_traces=args.traces)
+        compute_summary(args.output_dir, n_traces=args.traces if args.traces else None)
         plot_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plot_results.py")
         if os.path.exists(plot_script):
             print("\nGenerating dissertation figures...")
