@@ -516,7 +516,7 @@ def plot_dqn_vs_greedy_scatter(results_dir, out_dir):
 
 
 def plot_per_metric_comparison(results_dir, out_dir):
-    """One figure per metric: DQN vs Greedy line chart across all traces."""
+    """One scatter per metric: each dot = one trace, x = Greedy, y = DQN, 45° diagonal."""
     trace_ids = sorted(
         int(os.path.basename(f).replace("trace_", "").replace(".csv", ""))
         for f in glob.glob(os.path.join(results_dir, "dqn", "trace_*.csv"))
@@ -525,58 +525,54 @@ def plot_per_metric_comparison(results_dir, out_dir):
         print("  Skipping per-metric comparison — no DQN trace files found.")
         return
 
-    # Pre-load all metrics for both methods.
     dqn_vals    = {k: [] for k in _ALL_METRICS}
     greedy_vals = {k: [] for k in _ALL_METRICS}
     for tid in trace_ids:
-        dm = compute_all_trace_metrics("dqn",            results_dir, tid)
+        dm = compute_all_trace_metrics("dqn",             results_dir, tid)
         gm = compute_all_trace_metrics("greedy_min_peak", results_dir, tid)
         for k in _ALL_METRICS:
-            dqn_vals[k].append(dm[k]    if dm else float("nan"))
+            dqn_vals[k].append(dm[k] if dm else float("nan"))
             greedy_vals[k].append(gm[k] if gm else float("nan"))
-
-    x = np.arange(len(trace_ids))
 
     for key in _ALL_METRICS:
         dv = np.array(dqn_vals[key])
         gv = np.array(greedy_vals[key])
 
-        fig, ax = plt.subplots(figsize=(max(10, len(trace_ids) * 0.12), 4))
+        dqn_better  = dv < gv
+        n_dqn_wins  = int(np.sum(dqn_better))
+        dqn_win_pct    = n_dqn_wins / len(trace_ids) * 100
+        greedy_win_pct = 100 - dqn_win_pct
 
-        ax.plot(x, gv, color=COLORS["greedy_min_peak"], linewidth=1.2,
-                alpha=0.8, label=METHOD_LABELS["greedy_min_peak"], zorder=2)
-        ax.plot(x, dv, color=COLORS["dqn"], linewidth=1.8,
-                alpha=1.0, label=METHOD_LABELS["dqn"], zorder=3)
+        fig, ax = plt.subplots(figsize=(6, 6))
 
-        # Shade regions: green where DQN wins, red where greedy wins.
-        dqn_better = dv < gv
-        ax.fill_between(x, dv, gv, where=dqn_better,
-                        alpha=0.15, color=COLORS["dqn"],            label="DQN better")
-        ax.fill_between(x, dv, gv, where=~dqn_better,
-                        alpha=0.15, color=COLORS["greedy_min_peak"], label="Greedy better")
+        ax.scatter(gv[~dqn_better], dv[~dqn_better],
+                   s=18, alpha=0.6, color=COLORS["greedy_min_peak"],
+                   label=f"Greedy better  ({greedy_win_pct:.1f}%)", zorder=3)
+        ax.scatter(gv[dqn_better], dv[dqn_better],
+                   s=18, alpha=0.6, color=COLORS["dqn"],
+                   label=f"DQN better  ({dqn_win_pct:.1f}%)", zorder=3)
 
-        # Mean lines.
-        ax.axhline(np.nanmean(dv), color=COLORS["dqn"],            linestyle="--",
-                   linewidth=1.0, alpha=0.7)
-        ax.axhline(np.nanmean(gv), color=COLORS["greedy_min_peak"], linestyle="--",
-                   linewidth=1.0, alpha=0.7)
+        # 45° diagonal.
+        lo = min(np.nanmin(dv), np.nanmin(gv))
+        hi = max(np.nanmax(dv), np.nanmax(gv))
+        pad = (hi - lo) * 0.05 if hi > lo else 0.01
+        lims = (lo - pad, hi + pad)
+        ax.plot(lims, lims, "k--", linewidth=1, label="Equal", zorder=2)
+        ax.set_xlim(lims)
+        ax.set_ylim(lims)
 
-        ax.set_xticks(x[::max(1, len(trace_ids) // 20)])
-        ax.set_xticklabels([str(trace_ids[i]) for i in range(0, len(trace_ids),
-                             max(1, len(trace_ids) // 20))], fontsize=8)
-        ax.set_xlabel("Trace ID")
-        ax.set_ylabel(_METRIC_LABELS[key])
-        n_dqn_wins = int(np.sum(dqn_better))
+        ax.set_xlabel(f"Greedy Min-Peak  —  {_METRIC_LABELS[key]}")
+        ax.set_ylabel(f"DQN  —  {_METRIC_LABELS[key]}")
         ax.set_title(
-            f"{_METRIC_LABELS[key]}  —  DQN vs Greedy Min-Peak  "
-            f"(DQN wins {n_dqn_wins}/{len(trace_ids)} traces)",
+            f"{_METRIC_LABELS[key]}  —  DQN vs Greedy Min-Peak\n"
+            f"(below diagonal = DQN wins  |  {n_dqn_wins}/{len(trace_ids)} traces)",
             fontsize=11,
         )
-        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18),
-                  ncol=4, fontsize=9, framealpha=0.9)
+        ax.legend(fontsize=9, framealpha=0.9)
         ax.grid(True, alpha=0.25)
+        ax.set_aspect("equal", adjustable="box")
 
-        fig.tight_layout(rect=[0, 0.12, 1, 1])
+        fig.tight_layout()
         savefig(fig, os.path.join(out_dir, "ch6", "per_metric", f"per_metric_{key}.png"))
 
 
